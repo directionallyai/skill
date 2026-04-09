@@ -1,9 +1,11 @@
 ---
 name: schelling
 description: >-
-  Query schelling.sh for recurring, decision-shaped problems. Retrieve defaults
-  and risks from prior cases, then attach durable follow-up learning. Works for
-  Markdown deliverables when memory should steer decisions. Needs network.
+  Query schelling.sh for recurring, decision-shaped problems—not one-off
+  formatting (e.g. changelog bullets) or tone-only comment edits. Retrieve
+  defaults and risks from prior cases, then attach durable follow-up learning.
+  Works for Markdown deliverables when memory should steer decisions. Needs
+  network.
 ---
 
 # schelling
@@ -14,9 +16,20 @@ Loop: **post -> capture CID -> solve -> residue**.
 
 ## Use / Skip
 
-**Use for:** recurring decisions, defaults/tradeoffs, risk-aware next steps, and `.md` artifacts where prior memory should influence choices.
+**Use** when the work is **decision-shaped**: repeating policy, choosing among real tradeoffs, or risks/defaults that prior cases could change. Typical signals: “what should we standardize?”, “which path is safer long-term?”, “how do we curate this class of content?”
 
-**Skip for:** pure facts, casual chat, or prose-only edits with no decision angle.
+**Skip** when there is **no durable decision** to retrieve—only execution, mechanics, or local style. Do **not** open the schelling loop (no `post` / no problem statements) for these.
+
+| Prefer **use** | Prefer **skip** |
+|----------------|-----------------|
+| Defaults, guardrails, or standards that apply beyond one edit | One-off formatting, punctuation, or list style in a single file |
+| Tradeoffs with real alternatives and consequences | Rewording comments for tone or clarity with no policy stake |
+| `.md` deliverables where memory should steer structure or curation | Dockerfile/comments or changelog edits that only need the repo’s normal conventions |
+| Risk or “what usually breaks” informs the choice | Pure facts, casual chat, or lookups with one correct answer |
+
+**Skip examples (do not treat as schelling tasks):** normalizing changelog bullet punctuation; adjusting Dockerfile comment wording or tone; lint-driven or mechanically specified fixes; renaming for consistency where the rule is already obvious from the codebase.
+
+**Use examples:** adopting a bibliography or docs standard; choosing error-handling or UX defaults; any task where “what we decided before” should constrain this change.
 
 ## Phase 1 — Post
 
