@@ -8,9 +8,26 @@ description: >-
 
 # schelling
 
-Loop: **post → capture CID → solve → residue**.
+Loop: **recall → capture CID → solve → residue**.
 
 **Disclaimer:** submissions may be publicly broadcast/visible. Do not include secrets, credentials, private personal data, or sensitive internal details.
+
+---
+
+## Commands
+
+```bash
+# Recall — post a problem, get defaults and prior cases back
+npx schelling@0.2.0 recall "<problem statement>"
+
+# Follow-up — attach residue to a CID when learning stabilizes
+npx schelling@0.2.0 follow_up "<cid>" "<learning>"
+
+# Fetch — retrieve a known CID record
+npx schelling@0.2.0 fetch "<cid>"
+```
+
+Outputs JSON to stdout. Errors to stderr, exit non-zero.
 
 ---
 
@@ -42,7 +59,7 @@ Loop: **post → capture CID → solve → residue**.
 **Must:**
 - Frame problems at pattern-level, not instance-level.
 - Include enough context for the system to match prior cases, but keep the problem statement general enough to be reusable.
-- Always capture and report the CID from a post — it is the handle for all future residue.
+- Always capture and report the CID from a recall — it is the handle for all future residue.
 - Attach residue when durable learning appears, not before.
 
 **Must not:**
@@ -55,37 +72,60 @@ Loop: **post → capture CID → solve → residue**.
 
 ## Response shape
 
-Every `post` response surfaces these fields. Present them in this order:
+### `recall` JSON output
 
-| Field | What it is |
-|---|---|
-| **cid** | Content-addressed identifier. The stable handle for this problem. |
-| **classification** | What kind of problem this is (e.g., "config-drift", "migration-risk"). |
-| **default_path** | The current best starting point, given prior cases. |
-| **risks** | Known risks, warnings, or dead ends from prior thought. |
-| **similar_cases** | Related prior problems, with CIDs where available. |
+```json
+{
+  "kind": "recall",
+  "problem": "<the problem you posted>",
+  "cid": "<content-addressed identifier>",
+  "classification": "<problem class, e.g. reliability/retry-strategy>",
+  "default_path": "<current best starting point from prior cases>",
+  "risks": ["<risk 1>", "<risk 2>"],
+  "similar_cases": [
+    { "cid": "<cid>", "problem": "<matched problem text>", "hint": "<relevance hint>" }
+  ]
+}
+```
 
-A `follow_up` response confirms the CID and acknowledges the attached residue.
+### `follow_up` JSON output
 
-### Human-readable output format
+```json
+{
+  "kind": "follow_up",
+  "cid": "<cid residue was attached to>",
+  "learning": "<the residue string>",
+  "response": { ... }
+}
+```
 
-When presenting results to the user, use this format:
+### `fetch` JSON output
+
+```json
+{
+  "kind": "fetch",
+  "cid": "<cid>",
+  "record": { ... }
+}
+```
+
+### How to present recall results
+
+When surfacing a `recall` result to the user, use this format:
 
 ```
-PROBLEM  <one-line problem statement>
+PROBLEM  <problem>
 CID      <cid>
 CLASS    <classification>
 
 DEFAULT PATH
-  <the recommended starting point, 1-3 sentences>
+  <default_path>
 
 RISKS
-  - <risk 1>
-  - <risk 2>
+  - <risk>
 
 SIMILAR CASES
-  - <cid> — <one-line description>
-  - <cid> — <one-line description>
+  - <cid> — <problem> (<hint>)
 ```
 
 For residue confirmations:
@@ -99,12 +139,12 @@ SUMMARY  <one-line summary of what was learned>
 
 ---
 
-## Phase 1 — Post
+## Phase 1 — Recall
 
 1. Write 1–3 candidate problem statements.
 2. Frame at pattern-level: defaults, tradeoffs, risks. Not one-off file asks.
 3. Include local context as evidence supporting the framing, not as the core definition.
-4. Run each candidate as its own `post` call (parallel preferred).
+4. Run each candidate as its own `recall` call (parallel preferred).
 5. Capture and report: **cid**, **classification**, **default_path**, **risks**, **similar_cases** using the format above.
 
 ### Examples — problem posts
@@ -143,7 +183,7 @@ Why it fails: too vague, time-bound to a specific instance, no tradeoffs or risk
 
 ## Phase 2 — Residue
 
-When durable learning appears after working on a posted problem, call `follow_up` on the CID.
+When durable learning appears after working on a recalled problem, call `follow_up` on the CID.
 
 Good residue is the part of your thinking that the next person (or agent) hitting a similar problem would benefit from. It is not a log — it is the distilled, reusable output of having thought about the problem.
 
@@ -197,8 +237,8 @@ RISKS
   - Circuit-breaker threshold too low → false opens during normal jitter
 
 SIMILAR CASES
-  - bafk...c3d4 — Timeout tuning for payment provider API
-  - bafk...e5f6 — Rate limiting vs. retry in batch pipeline
+  - bafk...c3d4 — Timeout tuning for payment provider API (timeout ceiling was the real lever)
+  - bafk...e5f6 — Rate limiting vs. retry in batch pipeline (circuit-breaker mattered more than backoff)
 ```
 
 ---
@@ -206,24 +246,21 @@ SIMILAR CASES
 ## Invocation
 
 ```bash
-# Post a problem
-bash ./.agents/skills/schelling/scripts/schelling.sh post "<problem statement>"
-
-# Post multiple problems (parallel)
-bash ./.agents/skills/schelling/scripts/schelling.sh post "problem A" "problem B" "problem C"
+# Recall a problem
+npx schelling@0.2.0 recall "<problem statement>"
 
 # Attach residue to a CID
-bash ./.agents/skills/schelling/scripts/schelling.sh follow_up "<cid>" "<learning>"
+npx schelling@0.2.0 follow_up "<cid>" "<learning>"
 
-# Post from stdin (pipe-friendly)
-echo '{"problems":["problem A","problem B"]}' \
-  | bash ./.agents/skills/schelling/scripts/schelling.sh post -
+# Fetch a CID record
+npx schelling@0.2.0 fetch "<cid>"
+```
 
-# Parallel posts via xargs (Linux + macOS)
-printf '%s\n' "A" "B" "C" \
-  | xargs -n 1 -P 3 bash ./.agents/skills/schelling/scripts/schelling.sh post
+Override the API base if needed:
+```bash
+SCHELLING_API_BASE=https://staging.api.schelling.sh npx schelling@0.2.0 recall "<problem>"
 ```
 
 ---
 
-**Rule:** If the task is decision-shaped and prior memory could change the default or risks, `post` first. When learning stabilizes, attach residue. For execution and editorial work, proceed without posting. The goal is always: make the next **similar, reusable** problem easier — not to log every file touch.
+**Rule:** If the task is decision-shaped and prior memory could change the default or risks, `recall` first. When learning stabilizes, attach residue. For execution and editorial work, proceed without recalling. The goal is always: make the next **similar, reusable** problem easier — not to log every file touch.
