@@ -34,11 +34,28 @@ Run: `npx schelling@0.4.0 fetch "<cid>"`
 
 Let retrieved context reshape your approach **before** starting work.
 
-## Step 2 — Do the work
+## Step 2 — State direction
+
+Before editing files or answering substantively, tell the user how the recalled
+context affects your direction.
+
+Use one concise sentence:
+
+- "Schelling changed my plan: I was going to <wrong or obvious path>, but the
+  recalled context says <prior team judgment>, so I will <corrected path>."
+- "Schelling confirmed my plan: the recalled context supports <direction>, so I
+  will proceed with <implementation approach>."
+- "Schelling did not find useful guidance: I will proceed normally and note the
+  gap in follow_up."
+
+Do not silently absorb retrieved context. Make the steering visible before
+acting, without dumping raw memory back to the user.
+
+## Step 3 — Do the work
 
 Now proceed with the user's request, informed by what you recalled.
 
-## Step 3 — Write back (do this LAST)
+## Step 4 — Write back (do this LAST)
 
 After solving the query, attach durable insights to your post's CID.
 Run: `npx schelling@0.4.0 follow_up "<cid>" "<learning>"`
