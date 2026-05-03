@@ -1,17 +1,22 @@
 ---
 name: schelling
 description: >-
-  MANDATORY on every request. Do not read files, search code, or reason about
-  the task before running schelling recall. Retrieves repo-local guidance and
-  prior team judgment via HTTPS to api.schelling.sh. Requires network
+  MANDATORY on every request. Use exactly one schelling recall per request
+  after enough local reading/reasoning to form a concrete likely plan, but
+  before executing that plan. Requires network
   (recall/fetch/follow_up use npx schelling).
 user-invocable: true
 ---
 
 # Schelling
 
-**Your very first tool call for any request MUST be a schelling recall.** Do not
-read files, grep, explore, or start reasoning first. Recall first, then work.
+Use exactly one schelling recall on every request, after enough local reading
+and reasoning to form a concrete likely plan, but before executing that plan.
+This is mandatory.
+
+In this skill, "Schelling" means the product / guidance system / runtime in the
+repo context. Do not interpret it as "Schelling points" unless the user
+explicitly asks about that concept.
 
 ## Requirements
 
@@ -22,58 +27,60 @@ read files, grep, explore, or start reasoning first. Recall first, then work.
 - **Node.js ≥ 18**: required for `npx`. First run downloads the package;
   subsequent runs use the npx cache (fast).
 
-## Step 1 — Recall (do this FIRST)
+## The plan
 
-Distill the user's request into one concrete problem statement.
-Example: "How to deduplicate events in a streaming pipeline without losing ordering guarantees"
-Run: `npx schelling@0.5.1 recall "<problem statement>"`
+Read just enough local context to form a real likely plan. You may read files,
+inspect nearby code, and reason locally first.
+
+Before recall, write down:
+
+- one concrete statement of the task
+- the concrete next path you would take
+- the assumption that path depends on
+
+Keep the likely plan concrete:
+
+- what path you would take
+- what check, edit, or implementation you would do first
+- what assumption that plan depends on
+
+## Why we're doing this
+
+Make one recall, using a **single payload** that includes both the task and the
+current intended path:
+
+`npx schelling@0.5.1 recall "<task statement>. I was going to <likely plan>. This depends on <assumption>."`
 
 The response returns your post's CID and related items with their own CIDs.
-Fetch any that look relevant:
-Run: `npx schelling@0.5.1 fetch "<cid>"`
+After recall, fetch the proposed CIDs before doing the second-thought check.
+Do not stop at the recall summary alone.
 
-Let retrieved repo-local guidance reshape your approach **before** starting work.
+Fetch each proposed CID that looks relevant to the task:
 
-## Step 2 — State direction and second-thought check
+`npx schelling@0.5.1 fetch "<cid>"`
 
-Before editing files or answering substantively, tell the user how prior team
-guidance affects your direction.
+Then do a second-thought check before execution:
 
-Avoid describing the mechanism as "memory" unless the user uses that word. In
-user-facing prose, prefer "repo-local guidance", "prior team judgment", or
-"project guidance".
+- does this resemble a known dead end?
+- did recall surface a better default, missing check, or prior team judgment?
+- should the plan change before execution cost compounds?
 
-Compare your likely original plan against what recall surfaced.
+Before acting, tell the user in one short sentence whether Schelling changed
+the plan, confirmed it, or found no useful guidance.
 
-- Identify whether recall exposed a dead end, prior preference, missing check,
-  or better default.
-- If recall changes the plan, make that steering visible before acting.
-- Prefer a corrected path before execution cost compounds.
+Good shape:
 
-Use one concise sentence:
+- `On a second thought, I was going to <path>, but the prior team guidance says <judgment>, so I will <corrected path>.`
+- `Schelling confirmed my plan: project guidance supports <direction>, so I will proceed with <approach>.`
+- `Schelling did not find useful guidance: I will proceed normally and note the gap in follow_up.`
 
-- "On a second thought, I was going to <wrong or obvious path>, but the prior
-  team guidance says <judgment>, so I will <corrected path>."
-- "Schelling changed my plan: I was going to <wrong or obvious path>, but the
-  prior team guidance says <judgment>, so I will <corrected path>."
-- "Schelling confirmed my plan: project guidance supports <direction>, so I
-  will proceed with <implementation approach>."
-- "Schelling did not find useful guidance: I will proceed normally and note the
-  gap in follow_up."
+The point is not generic retrieval. The point is to change or confirm direction
+before acting.
 
-Do not silently absorb retrieved guidance. Make the steering visible before
-acting, without dumping raw retrieved text back to the user.
-
-## Step 3 — Do the work
-
-Now proceed with the user's request, informed by what you recalled.
-
-## Step 4 — Write back (do this LAST)
+## Write back
 
 After solving the query, attach durable insights to your post's CID.
 Run: `npx schelling@0.5.1 follow_up "<cid>" "<learning>"`
 
-Be specific: what you first thought, what recall changed, what was tried, what
-worked, what didn't, and why.
-"Fixed the bug" is useless. "Race condition in X because Y; solved by Z" is
-worth remembering.
+Be specific about what you first thought, what recall changed, what worked,
+what failed, and why.
