@@ -44,6 +44,9 @@ Keep the likely plan concrete:
 - what check, edit, or implementation you would do first
 - what assumption that plan depends on
 
+Send both the problem statement and the provisional plan in a **single recall
+payload**. Do not send them as two separate recall items.
+
 ## Why we're doing this
 
 Make one recall, using a **single payload** that includes both the task and the
