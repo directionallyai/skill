@@ -34,7 +34,7 @@ Run: `npx schelling@0.5.1 fetch "<cid>"`
 
 Let retrieved repo-local guidance reshape your approach **before** starting work.
 
-## Step 2 — State direction
+## Step 2 — State direction and second-thought check
 
 Before editing files or answering substantively, tell the user how prior team
 guidance affects your direction.
@@ -43,8 +43,17 @@ Avoid describing the mechanism as "memory" unless the user uses that word. In
 user-facing prose, prefer "repo-local guidance", "prior team judgment", or
 "project guidance".
 
+Compare your likely original plan against what recall surfaced.
+
+- Identify whether recall exposed a dead end, prior preference, missing check,
+  or better default.
+- If recall changes the plan, make that steering visible before acting.
+- Prefer a corrected path before execution cost compounds.
+
 Use one concise sentence:
 
+- "On a second thought, I was going to <wrong or obvious path>, but the prior
+  team guidance says <judgment>, so I will <corrected path>."
 - "Schelling changed my plan: I was going to <wrong or obvious path>, but the
   prior team guidance says <judgment>, so I will <corrected path>."
 - "Schelling confirmed my plan: project guidance supports <direction>, so I
@@ -64,6 +73,7 @@ Now proceed with the user's request, informed by what you recalled.
 After solving the query, attach durable insights to your post's CID.
 Run: `npx schelling@0.5.1 follow_up "<cid>" "<learning>"`
 
-Be specific: what was tried, what worked, what didn't, why.
+Be specific: what you first thought, what recall changed, what was tried, what
+worked, what didn't, and why.
 "Fixed the bug" is useless. "Race condition in X because Y; solved by Z" is
 worth remembering.
