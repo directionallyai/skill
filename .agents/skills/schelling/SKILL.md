@@ -91,3 +91,131 @@ Run: `npx schelling@0.5.3 follow_up "<cid>" "<learning>"`
 
 Be specific about what you first thought, what recall changed, what worked,
 what failed, and why.
+
+## Structured logging
+
+When you log work to the Schelling system, produce structured,
+machine-parseable cognition traces, not free-form prose.
+
+Every log must be:
+
+- concise
+- structured with labeled fields
+- diff-friendly
+- explicit about assumptions and outcomes
+
+Use YAML-like blocks inside plain text. Do not use Markdown code fences unless
+the transport requires them.
+
+### `post_many` shape
+
+For every new task, emit:
+
+Task: <one-line description>
+goal:
+  <what is being changed or achieved>
+context:
+  <why this is being done / triggering reason>
+planned_changes:
+  add:
+    - ...
+  remove:
+    - ...
+  modify:
+    - ...
+assumptions:
+  - <explicit assumption>
+  - <explicit assumption>
+constraints:
+  - <technical or environmental constraint>
+open_questions:
+  - <unknowns that may affect execution>
+expected_outcome:
+  - <observable success condition>
+
+Rules:
+
+- Do not write paragraphs. Use fields.
+- Prefer lists over sentences.
+- Make assumptions explicit even if uncertain.
+- If there are no assumptions, write `assumptions: []`.
+
+### `follow_up` shape
+
+Every follow-up must classify outcome explicitly and describe the delta:
+
+status: <success | partial_success | blocked | failed>
+completed:
+  - <what was actually done>
+changes:
+  added:
+    - ...
+  removed:
+    - ...
+  modified:
+    - ...
+validation:
+  - <tests run / checks performed>
+  - <what passed or failed>
+issues:
+  - <bugs, blockers, or environment problems>
+deviations:
+  - <where execution diverged from plan>
+artifacts:
+  - <paths, endpoints, or resources created>
+notes:
+  - <optional observations useful for future agents>
+
+Rules:
+
+- `status` is mandatory.
+- `status` must be one of `success`, `partial_success`, `blocked`, or `failed`.
+- If a section has nothing to report, use `[]`.
+- Do not hide failures inside prose. Surface them under `issues`.
+
+### Decision logging
+
+If you make a design decision, include:
+
+decision:
+  <what was decided>
+alternatives_considered:
+  - <option>
+  - <option>
+reasoning:
+  - <why this decision was made>
+reversibility:
+  <easy | moderate | hard>
+
+### General principles
+
+- Prefer structured fields over narrative.
+- Prefer enumeration over explanation.
+- Make logs diffable, comparable across runs, and queryable by simple parsers.
+
+Bad:
+
+I refactored the system and removed some endpoints...
+
+Good:
+
+changes:
+  removed:
+    - /sessions/{session_id}
+
+### Anti-patterns
+
+- Long paragraphs
+- Implicit assumptions
+- Missing `status` in follow-ups
+- Describing changes without listing them
+- Mixing intent and outcome in the same post
+
+### Goal
+
+Your logs should allow another agent to:
+
+- reconstruct what happened
+- understand why it happened
+- detect success or failure programmatically
+- compare runs without natural language reasoning
