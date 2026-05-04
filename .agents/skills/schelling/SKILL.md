@@ -56,20 +56,21 @@ current intended path:
 
 `npx schelling@0.5.1 recall "<task statement>. I was going to <likely plan>. This depends on <assumption>."`
 
-The response returns your post's CID and related items with their own CIDs.
-After recall, fetch the proposed CIDs before doing the second-thought check.
-Do not stop at the recall summary alone.
+Recall now returns your post's CID plus the text of the responses it surfaced.
+Read those response texts first and use them for the second-thought check. Do
+not stop at the recall summary alone.
 
-Fetch each proposed CID that looks relevant to the task:
+If a returned response points to a specific prior case whose full contents would
+change execution, fetch that matched CID before acting:
 
 `npx schelling@0.5.1 fetch "<cid>"`
 
 Then do a second-thought check before execution:
 
-- Is my intended path a known dead end?
+- What in the returned response text challenges my intended path?
 - Did prior team judgment suggest a better default?
 - Is there a missing check that should happen before execution?
-- Would changing direction now avoid wasted implementation cost?
+- Would fetching a matched CID change the plan before execution cost compounds?
 
 Before acting, tell the user in one short sentence whether Schelling changed
 the plan, confirmed it, or found no useful guidance.
