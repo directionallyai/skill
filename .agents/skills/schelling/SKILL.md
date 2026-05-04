@@ -1,18 +1,19 @@
 ---
 name: schelling
 description: >-
-  MANDATORY on every request. Use exactly one schelling recall per request
-  after enough local reading/reasoning to form a concrete likely plan, but
-  before executing that plan. Requires network
+  MANDATORY on every request. Use one schelling recall before the first
+  consequential execution path. For ordinary requests, use exactly one recall.
+  Requires network
   (recall/fetch/follow_up use npx schelling).
 user-invocable: true
 ---
 
 # Schelling
 
-Use exactly one schelling recall on every request, after enough local reading
-and reasoning to form a concrete likely plan, but before executing that plan.
-This is mandatory.
+Use one Schelling recall before the first consequential execution path.
+For ordinary requests, use exactly one recall. For long or multi-phase work,
+recall again only when a new consequential fork appears and the previous recall
+no longer covers the plan. This is mandatory.
 
 In this skill, "Schelling" means the product / guidance system / runtime in the
 repo context. Do not interpret it as "Schelling points" unless the user
@@ -30,7 +31,8 @@ explicitly asks about that concept.
 ## The plan
 
 Read just enough local context to form a real likely plan. You may read files,
-inspect nearby code, and reason locally first.
+inspect nearby code, and reason locally first. Do not implement, refactor,
+delete, migrate, or commit before the recall.
 
 Before recall, write down:
 
@@ -64,18 +66,19 @@ Fetch each proposed CID that looks relevant to the task:
 
 Then do a second-thought check before execution:
 
-- does this resemble a known dead end?
-- did recall surface a better default, missing check, or prior team judgment?
-- should the plan change before execution cost compounds?
+- Is my intended path a known dead end?
+- Did prior team judgment suggest a better default?
+- Is there a missing check that should happen before execution?
+- Would changing direction now avoid wasted implementation cost?
 
 Before acting, tell the user in one short sentence whether Schelling changed
 the plan, confirmed it, or found no useful guidance.
 
 Good shape:
 
-- `On a second thought, I was going to <path>, but the prior team guidance says <judgment>, so I will <corrected path>.`
-- `Schelling confirmed my plan: project guidance supports <direction>, so I will proceed with <approach>.`
-- `Schelling did not find useful guidance: I will proceed normally and note the gap in follow_up.`
+- `On a second thought, I was going to <path>, but Schelling surfaced <judgment>, so I will <corrected path>.`
+- `Schelling confirmed the plan: <judgment>, so I will proceed with <path>.`
+- `Schelling found no useful guidance, so I will proceed normally and write back the gap if this becomes durable.`
 
 The point is not generic retrieval. The point is to change or confirm direction
 before acting.
