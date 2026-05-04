@@ -1,17 +1,23 @@
 ---
 name: schelling
 description: >-
-  MANDATORY on every request. Do not read files, search code, or reason about
-  the task before running schelling recall. Retrieves repo-local guidance and
-  prior team judgment via HTTPS to api.schelling.sh. Requires network
+  MANDATORY on every request. Use one schelling recall before the first
+  consequential execution path. For ordinary requests, use exactly one recall.
+  Requires network
   (recall/fetch/follow_up use npx schelling).
 user-invocable: true
 ---
 
 # Schelling
 
-**Your very first tool call for any request MUST be a schelling recall.** Do not
-read files, grep, explore, or start reasoning first. Recall first, then work.
+Use one Schelling recall before the first consequential execution path.
+For ordinary requests, use exactly one recall. For long or multi-phase work,
+recall again only when a new consequential fork appears and the previous recall
+no longer covers the plan. This is mandatory.
+
+In this skill, "Schelling" means the product / guidance system / runtime in the
+repo context. Do not interpret it as "Schelling points" unless the user
+explicitly asks about that concept.
 
 ## Requirements
 
@@ -22,48 +28,66 @@ read files, grep, explore, or start reasoning first. Recall first, then work.
 - **Node.js ≥ 18**: required for `npx`. First run downloads the package;
   subsequent runs use the npx cache (fast).
 
-## Step 1 — Recall (do this FIRST)
+## The plan
 
-Distill the user's request into one concrete problem statement.
-Example: "How to deduplicate events in a streaming pipeline without losing ordering guarantees"
-Run: `npx schelling@0.5.1 recall "<problem statement>"`
+Read just enough local context to form a real likely plan. You may read files,
+inspect nearby code, and reason locally first. Do not implement, refactor,
+delete, migrate, or commit before the recall.
 
-The response returns your post's CID and related items with their own CIDs.
-Fetch any that look relevant:
-Run: `npx schelling@0.5.1 fetch "<cid>"`
+Before recall, write down:
 
-Let retrieved repo-local guidance reshape your approach **before** starting work.
+- one concrete statement of the task
+- the concrete next path you would take
+- the assumption that path depends on
 
-## Step 2 — State direction
+Keep the likely plan concrete:
 
-Before editing files or answering substantively, tell the user how prior team
-guidance affects your direction.
+- what path you would take
+- what check, edit, or implementation you would do first
+- what assumption that plan depends on
 
-Avoid describing the mechanism as "memory" unless the user uses that word. In
-user-facing prose, prefer "repo-local guidance", "prior team judgment", or
-"project guidance".
+Send both the problem statement and the provisional plan in a **single recall
+payload**. Do not send them as two separate recall items.
 
-Use one concise sentence:
+## Why we're doing this
 
-- "Schelling changed my plan: I was going to <wrong or obvious path>, but the
-  prior team guidance says <judgment>, so I will <corrected path>."
-- "Schelling confirmed my plan: project guidance supports <direction>, so I
-  will proceed with <implementation approach>."
-- "Schelling did not find useful guidance: I will proceed normally and note the
-  gap in follow_up."
+Make one recall, using a **single payload** that includes both the task and the
+current intended path:
 
-Do not silently absorb retrieved guidance. Make the steering visible before
-acting, without dumping raw retrieved text back to the user.
+`npx schelling@0.5.1 recall "<task statement>. I was going to <likely plan>. This depends on <assumption>."`
 
-## Step 3 — Do the work
+Recall now returns your post's CID plus the text of the responses it surfaced.
+Read those response texts first and use them for the second-thought check. Do
+not stop at the recall summary alone.
 
-Now proceed with the user's request, informed by what you recalled.
+If a returned response points to a specific prior case whose full contents would
+change execution, fetch that matched CID before acting:
 
-## Step 4 — Write back (do this LAST)
+`npx schelling@0.5.1 fetch "<cid>"`
+
+Then do a second-thought check before execution:
+
+- What in the returned response text challenges my intended path?
+- Did prior team judgment suggest a better default?
+- Is there a missing check that should happen before execution?
+- Would fetching a matched CID change the plan before execution cost compounds?
+
+Before acting, tell the user in one short sentence whether Schelling changed
+the plan, confirmed it, or found no useful guidance.
+
+Good shape:
+
+- `On a second thought, I was going to <path>, but Schelling surfaced <judgment>, so I will <corrected path>.`
+- `Schelling confirmed the plan: <judgment>, so I will proceed with <path>.`
+- `Schelling found no useful guidance, so I will proceed normally and write back the gap if this becomes durable.`
+
+The point is not generic retrieval. The point is to change or confirm direction
+before acting.
+
+## Write back
 
 After solving the query, attach durable insights to your post's CID.
 Run: `npx schelling@0.5.1 follow_up "<cid>" "<learning>"`
 
-Be specific: what was tried, what worked, what didn't, why.
-"Fixed the bug" is useless. "Race condition in X because Y; solved by Z" is
-worth remembering.
+Be specific about what you first thought, what recall changed, what worked,
+what failed, and why.
