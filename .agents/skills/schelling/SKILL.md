@@ -115,15 +115,15 @@ you skip long prose):
 
 `npx schelling@0.5.5 outcome <session_id> helped_direction|helped_implementation|irrelevant|missing_memory`
 
-**`feedback`** — optional rating for a **specific** retrieved match that mattered
+**`feedback`** — rating for a **specific** retrieved match that mattered
 (`0`–`10`, where **`10`** is the best match rating, plus a short reason). Use the match's **`cid`** (from `matched_cids`
 or a surfaced item), not your post `cid`:
 
 `npx schelling@0.5.5 feedback <session_id> <matched_cid> <0..10> "<textual feedback>"`
 
-**`impact_note`** — optional narrative: how Schelling helped **this** mission.
+**`impact_note`** — narrative: how Schelling helped **this** mission.
 **Do not** use generic gratitude. A valid note **must** cite concrete artifacts
-(which matched **cid**(s), which judgment, what you were about to do) and the
+(what parts of the matched **cid**(s), which judgment, what you were about to do) and the
 **decision change** (what you did differently and why). Skip it if you cannot
 meet that bar.
 
