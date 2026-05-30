@@ -1,231 +1,163 @@
 ---
-name: schelling
+name: directionally
 description: >-
-  MANDATORY on every request. Use one schelling recall before the first
-  consequential execution path. For ordinary requests, use exactly one recall.
-  Use the local interactive Node HTTP/2 bridge and send NDJSON requests over its
-  stdin.
+  MANDATORY on every request. Open the bridge, stream elaborations as you work,
+  read stdout before consequential actions, close out with follow-up and report.
 user-invocable: true
 ---
 
-# Schelling
+# Directionally
 
-Use one Schelling recall before the first consequential execution path.
-For ordinary requests, use exactly one recall. For long or multi-phase work,
-recall again only when a new consequential fork appears and the previous recall
-no longer covers the plan. This is mandatory.
+Open the bridge and start elaborating immediately on every request. Read stdout
+before any consequential action. Close out with follow-up and report. This is
+mandatory.
 
-In this skill, "Schelling" means the product / guidance system / runtime in the
-repo context. Do not interpret it as "Schelling points" unless the user
-explicitly asks about that concept.
+## Bridge
 
-## Requirements
-
-- **Local bridge**: start a long-running Node.js process in an **interactive
-  PTY**. The process connects to `http://localhost:9121` over HTTP/2 and forwards
-  each line from stdin as one streaming NDJSON chunk.
-- **Node.js >= 18**: required for the bridge process and built-in `http2`
-  support.
-- **One process per turn**: keep the PTY session open while you work. Send
-  `recall`, any needed `fetch`, and final write-back messages by writing NDJSON
-  lines to the same stdin.
-- **One line at a time**: each interaction is exactly one NDJSON object on one
-  stdin line. Send it in its own `write_stdin` call, read the bridge response,
-  then send the next line. Do not batch multiple NDJSON lines into one write.
-- **Local endpoint**: the bridge assumes the Schelling service is already
-  listening on `localhost:9121`. If the connection fails, report that the local
-  service is unavailable. Do **not** fall back to `npx schelling`, any
-  `schelling` package runner, or any remote API command.
-- **Server implementation**: in this repo, the local HTTP/2 receiver lives at
-  `scripts/schelling-local-server.js`.
-- **Client implementation**: in this repo, the interactive PTY bridge lives at
-  `scripts/schelling-http2-client.js`.
-
-## Local Bridge
-
-Launch the bridge in a PTY before the first Schelling operation. Keep the
-session id returned by the shell tool so later `write_stdin` calls can append
-NDJSON messages.
+Launch once per session in an interactive PTY:
 
 ```bash
-node scripts/schelling-http2-client.js
+DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally bridge
 ```
 
-Run that command with an interactive PTY enabled. Do not run one-off package
-commands for Schelling operations, and specifically do not run `npx schelling`
-as a fallback when the local bridge is unavailable.
+Keep the PTY process handle so later `write_stdin` calls can send further
+NDJSON messages. The bridge stays alive across the whole turn — new subsessions
+use a new `subsession_id` on the same process, no restart needed.
 
-Every stdin line is a complete JSON object and a complete interaction. For
-recall, stream `type: "elaborating"` objects as useful thoughts become worth
-publishing. Do not maintain a taxonomy of phases or event types. For non-recall
-operations, use command objects. The examples below show multiple possible
-lines, but send them one at a time and wait for the response after each line.
+## Protocol
+
+Every message the agent sends uses `op`. Use one stable `subsession_id` per
+subsession (e.g. `"run_001"`). The bridge handles all backend session
+management transparently.
+
+**Elaborations** — write freely, do not wait between writes:
 
 ```json
-{"session_id":"<local_run_id>","type":"elaborating","text":"<current understanding, hypothesis, evidence, intended action, or verification note>"}
-{"session_id":"<local_run_id>","type":"elaborating","text":"<another useful decision point after doing some work>","confidence":0.74}
-{"op":"fetch","cid":"<matched_cid>"}
-{"op":"follow_up","cid":"<post_cid>","learning":"<learning>"}
-{"op":"outcome","session_id":"<session_id>","outcome":"helped_direction|helped_implementation|irrelevant|missing_memory"}
-{"op":"feedback","session_id":"<session_id>","cid":"<matched_cid>","rating":8,"reason":"<textual feedback>"}
-{"op":"impact_note","session_id":"<session_id>","note":"<how Schelling helped the mission>"}
+{"op":"elaborating","subsession_id":"<local_run_id>","text":"<current understanding, hypothesis, evidence, intended action, or verification note>"}
+{"op":"elaborating","subsession_id":"<local_run_id>","text":"<another useful decision point>"}
 ```
 
-Read the bridge's stdout after each line before sending another line. Responses
-are NDJSON too. Capture the `session_id`, your post `cid`, any `matched_cids`,
-and surfaced response text before proceeding.
+**Closure ops** — read bridge stdout after each one:
 
-## The plan
+```json
+{"op":"follow_up","subsession_id":"<local_run_id>","learning":"<learning>"}
+{"op":"outcome","subsession_id":"<local_run_id>","value":"helped_direction|helped_implementation|irrelevant|missing_memory"}
+{"op":"feedback","subsession_id":"<local_run_id>","ratings":{"<cid>":85,"<cid>":20},"reason":"<textual feedback>"}
+{"op":"report","subsession_id":"<local_run_id>","did":"<what you ended up doing>","issues":"<issues encountered, if any>"}
+{"op":"impact_note","subsession_id":"<local_run_id>","note":"<how Directionally helped the mission>"}
+```
 
-Read just enough local context to form a real likely plan. You may read files,
-inspect nearby code, and reason locally first. Do not implement, refactor,
-delete, migrate, or commit before the recall.
+Bridge stdout is NDJSON. The only kinds you need to act on:
 
-During recall, still work through the natural phases of the task internally:
-understand the ask, identify assumptions and constraints, inspect evidence,
-revise the plan, gate consequential actions, and verify the result. Stream what
-is useful as `type: "elaborating"` NDJSON events. Do not wait to compress the
-whole recall into one summary line, and do not label the public stream with
-formal phases or specialized event types.
+- `consideration` — a retrieval result with `cid` and `text`; read stdout at
+  decision gates to collect these. Multiple may arrive per read.
+- `bridge_error` — surface to user if unrecoverable
 
-Good elaborations can include:
+Everything else is internal bridge state; you do not need to act on it.
 
-- the user's concrete ask and your current interpretation
-- the outcome you are trying to produce
-- assumptions, constraints, risks, or likely coupling
-- why a read-only check is useful
+## Elaborating
+
+Start streaming elaborations immediately from the user's query. The consult
+*is* the work — open the bridge, fire the first elaboration with your initial
+read of the task, then keep working. Each decision point that changes your
+understanding becomes another elaboration, streamed as it forms.
+
+The safety boundary: read stdout at least once before any edit, commit, or
+answer.
+
+Good elaborations are concise, observable decision artifacts:
+
+- your initial interpretation of the task
+- assumptions, constraints, or coupling you notice
 - evidence found while inspecting
-- the next consequential action and why it is ready
-- verification results, residual risk, or useful follow-up
+- a revised plan after new evidence
+- why a consequential action is ready to take
+- what passed or failed after verification
 
-Do not expose raw private reasoning or phase labels. These events should be
-concise, observable decision artifacts written in plain language.
+Do not narrate every step. Do not expose private reasoning or label phases.
+Stream when the decision state changes, not on a fixed cadence.
 
-Use one stable `session_id` for the turn. Do not include a `seq` field. The
-agent is free to do useful work between posts; the recall stream records
-decision points when they become worth publishing, not every internal step.
+Do not include a `seq` field.
 
-## Elaboration Cadence
+## Reading considerations
 
-Use `type: "elaborating"` whenever the decision state becomes more useful to
-record.
+Elaborate, then read stdout. Do not block — take what is there and move on.
 
-For ordinary tasks, post at least:
+Read stdout at decision gates:
 
-- one elaboration before the first meaningful inspection or action
-- one elaboration after inspection if the evidence changes, sharpens, or
-  confirms the plan
+- before a consequential edit, command, commit, or answer
+- before final write-back
 
-For tasks involving edits, network effects, or verification, also post:
+Collect any `consideration` lines that have arrived. Each has a `cid` and
+`text`. Use all of them — later ones may supersede earlier ones as the
+retrieval re-ranks, but earlier shallow matches are still useful. If nothing
+has arrived yet, proceed.
 
-- before the consequential action, stating why it is ready
-- after verification, stating what passed, failed, or remains uncertain
+Read each consideration's `text` as prior team judgment — something encountered
+before that bears on what you are about to do. Apply it by analogy:
 
-Do not post merely to narrate every internal step. The stream should capture
-decision-state changes, not a transcript.
+- If it describes something that failed or was reverted, treat it as a constraint
+- If it describes a choice that worked, lean toward it as a default
+- If it does not bear on the current decision, note that and proceed
 
-## Why we're doing this
-
-Make one recall by streaming structured events to the bridge stdin as they are
-formed. Each JSON object below is a separate interaction: write one line, read
-its response, then continue. You may inspect files, run read-only checks, and
-think between posts; publish the next event when the decision state changes.
-
-```json
-{"session_id":"run_001","type":"elaborating","text":"The user wants the login expiry bug fixed with a minimal safe change. I will first check whether expiry is owned only by auth.ts or also by session/middleware code."}
-{"session_id":"run_001","type":"elaborating","text":"Searching refreshToken, expiresAt, and session expiry references should distinguish an auth-only fix from a lifecycle-coupled fix."}
-{"session_id":"run_001","type":"elaborating","text":"The search showed refreshToken in auth.ts, session.ts, and middleware.ts, so I need to inspect session and middleware before editing auth."}
-{"session_id":"run_001","type":"elaborating","text":"After checking auth.ts, session.ts, middleware.ts, and auth.test.ts, the safe edit appears limited to auth.ts and session.ts; middleware reads expiry but does not update it."}
-{"session_id":"run_001","type":"elaborating","text":"Auth tests pass. Remaining risk is low because cross-tab refresh timing is not covered by an integration test."}
-```
-
-The bridge response may include a Schelling **`session_id`**, your post's
-**`cid`**, and the text of surfaced responses (often keyed by **`matched_cids`**).
-Keep the returned **`session_id`**: you need it for **`outcome`**, **`feedback`**,
-and **`impact_note`**. If the local event `session_id` differs from the returned
-Schelling `session_id`, use the returned one for closure commands.
-
-Recall now returns your post's CID plus the text of the responses it surfaced.
-Treat those response texts as prior partial information for the current choice,
-not as direct answers to the current task. Read them first, translate any useful
-judgment into the present context, and use that as input to the second-thought
-check. Do not stop at the recall summary alone.
-
-If a returned response points to a specific prior case whose full contents would
-change execution, fetch that matched CID before acting:
-
-```json
-{"op":"fetch","cid":"<matched_cid>"}
-```
-
-Fetched records are still only historical evidence. They can reveal constraints,
-defaults, failed paths, or team preferences, but they do not override the user's
-current request or the code in front of you. Apply them by analogy, then decide.
-
-Then do a second-thought check before execution:
-
-- What in the returned response text is relevant partial evidence for this
-  current choice?
-- Does prior team judgment suggest a better default when adapted to this
-  context?
-- Is there a missing check that should happen before execution?
-- Would fetching a matched CID change the plan before execution cost compounds?
-
-Before acting, tell the user in one short sentence whether Schelling changed
-the plan, confirmed it, or found no useful guidance.
-
-Good shape:
-
-- `On a second thought, I was going to <path>, but Schelling surfaced <judgment>, so I will <corrected path>.`
-- `Schelling confirmed the plan: <judgment>, so I will proceed with <path>.`
-- `Schelling found no useful guidance, so I will proceed normally and write back the gap if this becomes durable.`
-
-The point is not generic retrieval. The point is to change or confirm direction
-before acting.
+Before acting, tell the user in one short sentence whether the direction consult
+changed the plan, confirmed it, or found no useful guidance.
 
 ## Write back
 
-After solving the query, attach durable insights to your post's CID.
-Write:
+After completing the task, close the subsession with the following ops in order.
+
+**`follow_up`** — the most important write-back. This is raw material for the
+direction compiler: not a task summary but a reusable behavioral lesson that
+should change what a future agent does when it encounters the same class of
+problem.
+
+Write it with these ingredients:
+
+- **pattern** — name the recurring situation, not just what happened this time
+- **context trigger** — what observable condition should wake this up next time
+- **behavior** — what a future agent should do differently
+- **misread risk** — the plausible wrong interpretation to avoid, when obvious
+- **receipt** — an observable signal that the right path was taken
+
+Good:
+
+> "Middleware that reads expiry but never writes it should be excluded from the
+> fix scope. Trigger: any expiry bug touching both auth and session layers.
+> Behavior: check middleware for writes before including it. Misread risk:
+> assuming middleware involvement because it imports the expiry field. Receipt:
+> grep confirms no write path in middleware."
+
+Bad:
+
+> "Completed the task and the considerations were useful."
 
 ```json
-{"op":"follow_up","cid":"<post_cid>","learning":"<learning>"}
+{"op":"follow_up","subsession_id":"<local_run_id>","learning":"<learning>"}
 ```
 
-Be specific about what you first thought, what recall changed, what worked,
-what failed, and why.
-
-## Session closure
-
-These commands are **separate** from `follow_up`. They use **`session_id`** from
-the **same** recall's JSON output, not the post **`cid`**. They hit the feedback
-API with different `kind` / payload shapes.
-
-**`outcome`** — one categorical signal per recall session (measurable even when
-you skip long prose):
+**`report`** — what you ended up doing and any issues encountered:
 
 ```json
-{"op":"outcome","session_id":"<session_id>","outcome":"helped_direction|helped_implementation|irrelevant|missing_memory"}
+{"op":"report","subsession_id":"<local_run_id>","did":"<what you did>","issues":"<issues, or empty string if none>"}
 ```
 
-**`feedback`** — rating for a **specific** retrieved match that mattered
-(`0`–`10`, where **`10`** is the best match rating, plus a short reason). Use the match's **`cid`** (from `matched_cids`
-or a surfaced item), not your post `cid`:
+**`outcome`** — one categorical signal:
 
 ```json
-{"op":"feedback","session_id":"<session_id>","cid":"<matched_cid>","rating":8,"reason":"<textual feedback>"}
+{"op":"outcome","subsession_id":"<local_run_id>","value":"helped_direction|helped_implementation|irrelevant|missing_memory"}
 ```
 
-**`impact_note`** — narrative: how Schelling helped **this** mission.
-**Do not** use generic gratitude. A valid note **must** cite concrete artifacts
-(what parts of the matched **cid**(s), which judgment, what you were about to do) and the
-**decision change** (what you did differently and why). Skip it if you cannot
-meet that bar.
+**`feedback`** — rate each consideration received, `cid` → score (0–100):
 
 ```json
-{"op":"impact_note","session_id":"<session_id>","note":"<how Schelling helped the mission>"}
+{"op":"feedback","subsession_id":"<local_run_id>","ratings":{"<cid>":85,"<cid>":20},"reason":"<why they were or weren't useful>"}
 ```
 
-Typical order after work: `follow_up` on your post **`cid`**, then **`outcome`**;
-add **`feedback`** when a match deserves a score; add **`impact_note`** only when
-the bar above is met.
+**`impact_note`** — how Directionally concretely changed what you did. Must
+cite specific considerations and the decision change. Skip if you cannot meet
+that bar:
+
+```json
+{"op":"impact_note","subsession_id":"<local_run_id>","note":"<how Directionally helped the mission>"}
+```
