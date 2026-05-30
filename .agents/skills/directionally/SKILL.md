@@ -14,23 +14,20 @@ mandatory.
 
 ## Bridge
 
-Launch once per session using `Bash` with `run_in_background: true`. Use a
-regular file for input — `tail -f` feeds it into the bridge so appends are
-picked up immediately without EOF:
+Launch once per session using `Bash` with `run_in_background: true`. **Do not parallelize this call with anything else** — wait for it to return the output file path before proceeding:
 
 ```bash
-touch /tmp/bridge_in
-tail -f /tmp/bridge_in | DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally bridge
+DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally@0.1.2 bridge --tailtmp
 ```
 
 The harness returns a task output file path. **Read that file** at decision
 gates to collect considerations — exactly like reading interim output from a
 background build job.
 
-**Send ops** by appending to the input file in any subsequent Bash call:
+**Send ops** using `append` in any subsequent Bash call:
 
 ```bash
-echo '{"op":"elaborating",...}' >> /tmp/bridge_in
+npx directionally@0.1.2 append bridge_in '{"op":"elaborating",...}'
 ```
 
 The bridge stays alive across the whole turn — new subsessions use a new
@@ -41,12 +38,11 @@ you observe in the output file. If the bridge disappears (crash, restart),
 resume it:
 
 ```bash
-touch /tmp/bridge_in
-tail -f /tmp/bridge_in | DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally resume <session_id> <seq>
+DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally@0.1.2 resume <session_id> <seq> --tailtmp
 ```
 
 The resumed bridge reconnects to the existing backend session, replays any
-events above `seq`, and continues accepting ops from the file.
+events above `seq`, and continues accepting ops from the same input file.
 
 ## Protocol
 
@@ -57,18 +53,18 @@ management transparently.
 **Elaborations** — write freely, do not wait between writes:
 
 ```json
-{"op":"elaborating","subsession_id":"<local_run_id>","text":"<current understanding, hypothesis, evidence, intended action, or verification note>"}
-{"op":"elaborating","subsession_id":"<local_run_id>","text":"<another useful decision point>"}
+{"text":"<current understanding, hypothesis, evidence, intended action, or verification note>","op":"elaborating","subsession_id":"<local_run_id>"}
+{"text":"<another useful decision point>","op":"elaborating","subsession_id":"<local_run_id>"}
 ```
 
 **Closure ops** — read bridge stdout after each one:
 
 ```json
-{"op":"follow_up","subsession_id":"<local_run_id>","learning":"<learning>"}
-{"op":"outcome","subsession_id":"<local_run_id>","value":"helped_direction|helped_implementation|irrelevant|missing_memory"}
-{"op":"feedback","subsession_id":"<local_run_id>","ratings":{"<cid>":85,"<cid>":20},"reason":"<textual feedback>"}
-{"op":"report","subsession_id":"<local_run_id>","did":"<what you ended up doing>","issues":"<issues encountered, if any>"}
-{"op":"impact_note","subsession_id":"<local_run_id>","note":"<how Directionally helped the mission>"}
+{"learning":"<learning>","op":"follow_up","subsession_id":"<local_run_id>"}
+{"value":"helped_direction|helped_implementation|irrelevant|missing_memory","op":"outcome","subsession_id":"<local_run_id>"}
+{"ratings":{"<cid>":85,"<cid>":20},"reason":"<textual feedback>","op":"feedback","subsession_id":"<local_run_id>"}
+{"did":"<what you ended up doing>","issues":"<issues encountered, if any>","op":"report","subsession_id":"<local_run_id>"}
+{"note":"<how Directionally helped the mission>","op":"impact_note","subsession_id":"<local_run_id>"}
 ```
 
 Bridge stdout is NDJSON. The only kinds you need to act on:
@@ -85,6 +81,15 @@ Start streaming elaborations immediately from the user's query. The consult
 *is* the work — open the bridge, fire the first elaboration with your initial
 read of the task, then keep working. Each decision point that changes your
 understanding becomes another elaboration, streamed as it forms.
+
+**Right after the bridge starts and reports the input file** (`bridge_started`
+event with `input_file`), send a brief elaboration of your initial read of the
+task, then read stdout once to collect any early considerations before doing
+anything else.
+
+**Before undertaking any action** (edit, command, commit, or search), send a
+brief elaboration of your plan — what you intend to do and why. This makes each
+decision explicit before execution.
 
 The safety boundary: read stdout at least once before any edit, commit, or
 answer.
@@ -105,11 +110,16 @@ Do not include a `seq` field.
 
 ## Reading considerations
 
+The pattern is **elaborate → read stdout → act**. Do not run more than one
+Bash call without reading stdout in between if your understanding of the task
+has changed since the last read.
+
 Elaborate, then read stdout. Do not block — take what is there and move on.
 
 Read stdout at decision gates:
 
-- before a consequential edit, command, commit, or answer
+- after every elaboration that changes your understanding of the task
+- before a consequential edit, command, commit, search, or answer
 - before final write-back
 
 Collect any `consideration` lines that have arrived. Each has a `cid` and
@@ -157,25 +167,25 @@ Bad:
 > "Completed the task and the considerations were useful."
 
 ```json
-{"op":"follow_up","subsession_id":"<local_run_id>","learning":"<learning>"}
+{"learning":"<learning>","op":"follow_up","subsession_id":"<local_run_id>"}
 ```
 
 **`report`** — what you ended up doing and any issues encountered:
 
 ```json
-{"op":"report","subsession_id":"<local_run_id>","did":"<what you did>","issues":"<issues, or empty string if none>"}
+{"did":"<what you did>","issues":"<issues, or empty string if none>","op":"report","subsession_id":"<local_run_id>"}
 ```
 
 **`outcome`** — one categorical signal:
 
 ```json
-{"op":"outcome","subsession_id":"<local_run_id>","value":"helped_direction|helped_implementation|irrelevant|missing_memory"}
+{"value":"helped_direction|helped_implementation|irrelevant|missing_memory","op":"outcome","subsession_id":"<local_run_id>"}
 ```
 
 **`feedback`** — rate each consideration received, `cid` → score (0–100):
 
 ```json
-{"op":"feedback","subsession_id":"<local_run_id>","ratings":{"<cid>":85,"<cid>":20},"reason":"<why they were or weren't useful>"}
+{"ratings":{"<cid>":85,"<cid>":20},"reason":"<why they were or weren't useful>","op":"feedback","subsession_id":"<local_run_id>"}
 ```
 
 **`impact_note`** — how Directionally concretely changed what you did. Must
@@ -183,5 +193,5 @@ cite specific considerations and the decision change. Skip if you cannot meet
 that bar:
 
 ```json
-{"op":"impact_note","subsession_id":"<local_run_id>","note":"<how Directionally helped the mission>"}
+{"note":"<how Directionally helped the mission>","op":"impact_note","subsession_id":"<local_run_id>"}
 ```
