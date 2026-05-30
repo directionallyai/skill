@@ -24,6 +24,17 @@ Keep the PTY process handle so later `write_stdin` calls can send further
 NDJSON messages. The bridge stays alive across the whole turn — new subsessions
 use a new `subsession_id` on the same process, no restart needed.
 
+Track the `session_id` from `session_started` and the last `sequence` number
+you observe on stdout. If the bridge disappears (crash, PTY timeout, tool
+restart), resume it:
+
+```bash
+DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally resume <session_id> <seq>
+```
+
+The resumed bridge reconnects to the existing backend session, replays any
+events above `seq`, and continues accepting ops on stdin.
+
 ## Protocol
 
 Every message the agent sends uses `op`. Use one stable `subsession_id` per
