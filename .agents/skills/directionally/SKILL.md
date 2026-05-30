@@ -14,26 +14,39 @@ mandatory.
 
 ## Bridge
 
-Launch once per session in an interactive PTY:
+Launch once per session using `Bash` with `run_in_background: true`. Use a
+regular file for input — `tail -f` feeds it into the bridge so appends are
+picked up immediately without EOF:
 
 ```bash
-DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally bridge
+touch /tmp/bridge_in
+tail -f /tmp/bridge_in | DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally bridge
 ```
 
-Keep the PTY process handle so later `write_stdin` calls can send further
-NDJSON messages. The bridge stays alive across the whole turn — new subsessions
-use a new `subsession_id` on the same process, no restart needed.
+The harness returns a task output file path. **Read that file** at decision
+gates to collect considerations — exactly like reading interim output from a
+background build job.
 
-Track the `session_id` from `session_started` and the last `sequence` number
-you observe on stdout. If the bridge disappears (crash, PTY timeout, tool
-restart), resume it:
+**Send ops** by appending to the input file in any subsequent Bash call:
 
 ```bash
-DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally resume <session_id> <seq>
+echo '{"op":"elaborating",...}' >> /tmp/bridge_in
+```
+
+The bridge stays alive across the whole turn — new subsessions use a new
+`subsession_id` on the same process, no restart needed.
+
+Track the `session_id` from `session_started` and the last `sequence` number
+you observe in the output file. If the bridge disappears (crash, restart),
+resume it:
+
+```bash
+touch /tmp/bridge_in
+tail -f /tmp/bridge_in | DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally resume <session_id> <seq>
 ```
 
 The resumed bridge reconnects to the existing backend session, replays any
-events above `seq`, and continues accepting ops on stdin.
+events above `seq`, and continues accepting ops from the file.
 
 ## Protocol
 
