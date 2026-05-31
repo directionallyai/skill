@@ -17,7 +17,7 @@ mandatory.
 Launch once per session using `Bash` with `run_in_background: true`. **Do not parallelize this call with anything else** — wait for it to return the output file path before proceeding:
 
 ```bash
-DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally@0.1.2 bridge --tailtmp
+DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally@0.1.3 bridge --tailtmp
 ```
 
 The harness returns a task output file path. **Read that file** at decision
@@ -34,7 +34,7 @@ the rest of the turn:
 **Send ops** using `append` with the `session_id` as the name:
 
 ```bash
-npx directionally@0.1.2 append <session_id> '{"op":"elaborating",...}'
+npx directionally@0.1.3 append <session_id> '{"op":"elaborating",...}'
 ```
 
 The bridge stays alive across the whole turn — new subsessions use a new
@@ -44,7 +44,7 @@ If the bridge disappears (crash, restart), resume it using the same
 `session_id` and last `sequence` you observed:
 
 ```bash
-DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally@0.1.2 resume <session_id> <seq> --tailtmp
+DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally@0.1.3 resume <session_id> <seq> --tailtmp
 ```
 
 The resumed bridge reconnects to the existing backend session, replays any
