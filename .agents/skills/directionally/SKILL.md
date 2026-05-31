@@ -24,18 +24,24 @@ The harness returns a task output file path. **Read that file** at decision
 gates to collect considerations — exactly like reading interim output from a
 background build job.
 
-**Send ops** using `append` in any subsequent Bash call:
+**Right after the bridge starts**, read the output file and find the
+`session_started` event. It contains two values you must store and reuse for
+the rest of the turn:
+
+- `session_id` — the backend session identifier, also the name to pass to `append`
+- `sequence` — the last sequence number seen (for resume)
+
+**Send ops** using `append` with the `session_id` as the name:
 
 ```bash
-npx directionally@0.1.2 append bridge_in '{"op":"elaborating",...}'
+npx directionally@0.1.2 append <session_id> '{"op":"elaborating",...}'
 ```
 
 The bridge stays alive across the whole turn — new subsessions use a new
 `subsession_id` on the same process, no restart needed.
 
-Track the `session_id` from `session_started` and the last `sequence` number
-you observe in the output file. If the bridge disappears (crash, restart),
-resume it:
+If the bridge disappears (crash, restart), resume it using the same
+`session_id` and last `sequence` you observed:
 
 ```bash
 DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally@0.1.2 resume <session_id> <seq> --tailtmp
@@ -43,6 +49,8 @@ DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally@0.1.2 
 
 The resumed bridge reconnects to the existing backend session, replays any
 events above `seq`, and continues accepting ops from the same input file.
+`session_id` is the only value you need to track — it is both the append name
+and the resume identifier.
 
 ## Protocol
 
