@@ -14,27 +14,28 @@ mandatory.
 
 ## Bridge
 
-Launch once per session using `Bash` with `run_in_background: true`. **Do not parallelize this call with anything else** — wait for it to return the output file path before proceeding:
+Launch once per session using `Bash` with `run_in_background: true`. **Do not parallelize this call with anything else** — wait for it to return the output file path before proceeding. Pass the first subsession ID and your initial elaboration of the task directly so they reach the server immediately upon connection:
 
 ```bash
-DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally@0.1.3 bridge --tailtmp
+DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally@0.1.6 bridge --tailtmp --subsession-id <local_run_id> --elaboration "<your initial read of the task>"
 ```
 
 The harness returns a task output file path. **Read that file** at decision
 gates to collect considerations — exactly like reading interim output from a
 background build job.
 
-**Right after the bridge starts**, read the output file and find the
-`session_started` event. It contains two values you must store and reuse for
-the rest of the turn:
+**After the bridge establishes the backend session**, read the output file and
+find the `bridge_started` event (it arrives once the backend confirms the
+session, not immediately at startup). It contains two values you must store and
+reuse for the rest of the turn:
 
-- `session_id` — the backend session identifier, also the name to pass to `append`
+- `session_id` — the name to pass to `append` and `resume`
 - `sequence` — the last sequence number seen (for resume)
 
 **Send ops** using `append` with the `session_id` as the name:
 
 ```bash
-npx directionally@0.1.3 append <session_id> '{"op":"elaborating",...}'
+npx directionally@0.1.6 append <session_id> '{"op":"elaborating",...}'
 ```
 
 The bridge stays alive across the whole turn — new subsessions use a new
@@ -44,7 +45,7 @@ If the bridge disappears (crash, restart), resume it using the same
 `session_id` and last `sequence` you observed:
 
 ```bash
-DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally@0.1.3 resume <session_id> <seq> --tailtmp
+DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx directionally@0.1.6 resume <session_id> <seq> --tailtmp
 ```
 
 The resumed bridge reconnects to the existing backend session, replays any
@@ -90,10 +91,10 @@ Start streaming elaborations immediately from the user's query. The consult
 read of the task, then keep working. Each decision point that changes your
 understanding becomes another elaboration, streamed as it forms.
 
-**Right after the bridge starts and reports the input file** (`bridge_started`
-event with `input_file`), send a brief elaboration of your initial read of the
-task, then read stdout once to collect any early considerations before doing
-anything else.
+The initial elaboration is sent at connection time via the `--elaboration` flag,
+before `bridge_started` arrives. **Right after the bridge reports `bridge_started`**
+(which arrives once the backend session is confirmed), read stdout once to collect
+any early considerations before doing anything else.
 
 **Before undertaking any action** (edit, command, commit, or search), send a
 brief elaboration of your plan — what you intend to do and why. This makes each
