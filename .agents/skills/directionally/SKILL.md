@@ -27,7 +27,7 @@ proceeding. Pass the first subsession ID and your initial elaboration of the
 task directly so they reach the server immediately upon connection:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.7 bridge --tailtmp --subsession-id <local_run_id> --elaboration "<your initial read of the task>"
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 bridge --tailtmp --subsession-id <local_run_id> --elaboration "<your initial read of the task>"
 ```
 
 ## Network Approval
@@ -50,20 +50,20 @@ argv prefix Codex can approve cleanly.
 Use the `env` command form for both Claude and Codex:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.7 bridge --tailtmp --subsession-id <local_run_id> --elaboration "<your initial read of the task>"
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 bridge --tailtmp --subsession-id <local_run_id> --elaboration "<your initial read of the task>"
 ```
 
 When requesting reusable approval in Codex, set `prefix_rule` exactly to:
 
 ```json
-["env","DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.1.7"]
+["env","DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.1.8"]
 ```
 
 Do not request a reusable approval for any of these instead:
 
 - `["npx"]`
-- `["npx","-y","directionally@0.1.7"]`
-- `["DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.1.7"]`
+- `["npx","-y","directionally@0.1.8"]`
+- `["DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.1.8"]`
 - a full one-off `bridge`, `append`, or `resume` command
 - a wrapper such as `["/bin/bash","-lc", "..."]`
 
@@ -86,7 +86,7 @@ sequence number seen, which you must store for resume:
 **Send ops** using `append` with the `session_id` as the name:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.7 append <session_id> '{"op":"elaborating",...}'
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 append <session_id> '{"op":"elaborating",...}'
 ```
 
 If `bridge_started` has not arrived yet, continue polling stdout briefly. Do
@@ -102,7 +102,7 @@ If the bridge disappears (crash, restart), resume it using the same
 `session_id` and last `sequence` you observed:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.7 resume <session_id> <seq> --tailtmp
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 resume <session_id> <seq> --tailtmp
 ```
 
 The resumed bridge reconnects to the existing backend session, replays any
@@ -122,11 +122,11 @@ tool-agnostic:
 - **Read**: poll the same live command session's stdout before consequential
   actions and before final answer.
 - **Append**: call
-  `env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.7 append <session_id> '<json>'`
+  `env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 append <session_id> '<json>'`
   using the backend `session_id` printed by the bridge. `bridge_started`
   confirms the session and provides the resume sequence.
 - **Network**: every command starting with
-  `env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.7`
+  `env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8`
   needs internet access for npm package resolution and Directionally API calls.
   If the agent requires command or network approval, request it before the first
   attempt. The approval justification must say the command needs access to
@@ -134,7 +134,7 @@ tool-agnostic:
   the command remains unavailable, say Directionally is unavailable for this
   turn, continue the user's task, and include that issue in the final answer.
   In Codex, the reusable permission should be granted on the exact argv prefix
-  `["env","DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.1.7"]`,
+  `["env","DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.1.8"]`,
   not on a narrower bridge, append, or resume invocation.
 
 Codex notes:
@@ -146,12 +146,12 @@ Codex notes:
 - Do not expect an output or input file path; the bridge prints the backend
   `session_id`.
 - In Codex, run the command as
-  `env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.7 ...`.
+  `env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 ...`.
 - If approval is required, start that command with escalation immediately. Do
   not wait for npm registry DNS, package download, or Directionally API failures
   before requesting permission.
 - In Codex, the reusable `prefix_rule` **MUST** be exactly
-  `["env","DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.1.7"]`.
+  `["env","DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.1.8"]`.
   This is the approval boundary. Do not use the shell-assignment form as a
   `prefix_rule`, and do not request approval for a narrower `bridge`/`append`/
   `resume` invocation or a wrapper such as `/bin/bash -lc ...`.
@@ -160,7 +160,7 @@ Claude notes:
 
 - Use `Bash` with `run_in_background: true` for the bridge.
 - Use the same
-  `env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.7 ...`
+  `env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 ...`
   command form as Codex.
 - Poll the background command output at the same decision gates.
 - **Claude Code permission — configure BEFORE first bridge launch**: Before
@@ -168,7 +168,7 @@ Claude notes:
   skill to ensure the project `.claude/settings.json` (or
   `.claude/settings.local.json`) contains exactly this allow entry:
   ```
-  "Bash(env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.7 *)"
+  "Bash(env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 *)"
   ```
   Ask the `update-config` skill to add that exact string to the project
   settings' `allowedTools` list if it is not already present. This prevents
