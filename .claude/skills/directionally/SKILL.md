@@ -1,331 +1,143 @@
 ---
 name: directionally
 description: >-
-  MANDATORY on every request. Open the bridge, stream elaborations as you work,
-  read stdout before consequential actions, close out with follow-up and report.
+  MANDATORY on every request. Start or reuse a Directionally session, emit
+  elaborations as you work, poll session events before consequential actions,
+  and close out with report/outcome/follow-up events.
 user-invocable: true
 ---
 
 # Directionally
 
-Use the existing live bridge when one is already available, and start
-elaborating immediately on every request. Read stdout before any consequential
-action. Close out with follow-up and report. This is mandatory.
+Use Directionally on every request. The CLI owns backend session creation and
+event polling; agents never invent `session_id` values.
 
-## Bridge
+## First-command Preflight
 
-First check whether this conversation already has a live bridge command-session
-handle and backend `session_id`. If it does, **do not start another bridge**:
-reuse the existing `session_id`, append a new `subsession_id`, and poll the live
-bridge stdout before acting.
+Directionally commands need internet access to:
 
-Launch the bridge only when no live bridge/session id is available, or when the
-previous bridge has disappeared and cannot be polled. Use the agent's available
-long-running/background command facility. **Do not parallelize this call with
-anything else** -- wait for it to print the backend session id before
-proceeding. Pass the first subsession ID and your initial elaboration of the
-task directly so they reach the server immediately upon connection:
+- `registry.npmjs.org` for `npx`
+- `api.dev.directionally.ai` for the Directionally backend
+
+Before the first command in a project, configure/approve the exact command
+prefix:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 bridge --tailtmp --subsession-id <local_run_id> --elaboration "<your initial read of the task>"
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.4 ...
 ```
 
-## Network Approval
 
-All Directionally commands need internet access. They may need
-`registry.npmjs.org` to resolve or download the npm package and
-`api.dev.directionally.ai` to talk to the Directionally backend. If the
-environment requires command or network approval, ask before the first attempt;
-do not intentionally run once in the sandbox just to discover the registry or
-backend access failure.
-
-Mention both required hosts in the approval justification.
-
-### Command and approval shape
-
-Codex reusable approvals are argv-prefix based. A leading shell environment
-assignment such as `DIRECTIONALLY_API_BASE=... npx ...` is shell syntax, not an
-argv prefix Codex can approve cleanly.
-
-Use the `env` command form for both Claude and Codex:
-
-```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 bridge --tailtmp --subsession-id <local_run_id> --elaboration "<your initial read of the task>"
-```
-
-When requesting reusable approval in Codex, set `prefix_rule` exactly to:
+For Codex reusable approval, use exactly:
 
 ```json
-["env","DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.1.8"]
+["env","DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.2.4"]
 ```
 
-Do not request a reusable approval for any of these instead:
+For Cursor project-local permissions, ensure `.cursor/cli.json` includes:
 
-- `["npx"]`
-- `["npx","-y","directionally@0.1.8"]`
-- `["DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.1.8"]`
-- a full one-off `bridge`, `append`, or `resume` command
-- a wrapper such as `["/bin/bash","-lc", "..."]`
+```json
+{
+  "permissions": {
+    "allow": [
+      "Shell(env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.4 *)"
+    ]
+  }
+}
+```
 
-The bridge prints a **session id**. Store it as `session_id`. This is the name
-to pass to `append` and `resume`; it is not a file path.
+Do not approve broader patterns like `Shell(env *)`, `Shell(npx *)`, or
+`Shell(env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx *)`.
 
-Read the long-running bridge process stdout at decision gates to collect
-considerations -- exactly like reading interim output from a background build
-job. In Claude this usually means polling the background `Bash` output. In
-Codex this usually means polling the `exec_command` session with `write_stdin`
-using empty input.
+## Setup
 
-**After the bridge establishes the backend session**, read stdout and find the
-`bridge_started` event (it arrives once the backend confirms the session, not
-immediately at startup). It confirms the `session_id` and contains the last
-sequence number seen, which you must store for resume:
-
-- `sequence` — the last sequence number seen (for resume)
-
-**Send ops** using `append` with the `session_id` as the name:
+If `.schelling/project-id` or the skill files are missing, run setup:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 append <session_id> '{"op":"elaborating",...}'
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.4 --setup
 ```
 
-If `bridge_started` has not arrived yet, continue polling stdout briefly. Do
-not invent a different `session_id`. Use the session id printed by the bridge
-for `append`; `bridge_started` is the stdout confirmation and source of the
-resume `sequence`.
+Use `--force owner/repo` only when the project id cannot be inferred from a
+GitHub remote.
 
-The bridge stays alive across the whole conversation when the agent still has
-the command-session handle — new requests and new subsessions use a new
-`subsession_id` on the same process, no restart needed.
+## Session Start
 
-If the bridge disappears (crash, restart), resume it using the same
-`session_id` and last `sequence` you observed:
+If this agent run has no remembered `session_id`, create a new session:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 resume <session_id> <seq> --tailtmp
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.4 --first --subsession-id <local_run_id> "<initial read of the task>"
 ```
 
-The resumed bridge reconnects to the existing backend session, replays any
-events above `seq`, and continues accepting ops for the same backend session.
-`session_id` is the only value you need to track — it is both the append name
-and the resume identifier.
+The elaboration text is a positional argument — no `--elaboration` flag.
 
-## Agent compatibility
+Run this command **in the foreground** and wait for it to complete before doing anything else. Do not run it in the background or in parallel with other commands — you need its stdout to get the `session_id`.
 
-This skill must work in both Claude and Codex. Treat the protocol as
-tool-agnostic:
+Read stdout until the CLI emits:
 
-- **Reuse or start**: if a live bridge command-session handle and backend
-  `session_id` already exist, reuse them. Otherwise run the `bridge` command in
-  a long-running/background command session and capture its printed backend
-  `session_id`.
-- **Read**: poll the same live command session's stdout before consequential
-  actions and before final answer.
-- **Append**: call
-  `env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 append <session_id> '<json>'`
-  using the backend `session_id` printed by the bridge. `bridge_started`
-  confirms the session and provides the resume sequence.
-- **Network**: every command starting with
-  `env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8`
-  needs internet access for npm package resolution and Directionally API calls.
-  If the agent requires command or network approval, request it before the first
-  attempt. The approval justification must say the command needs access to
-  `registry.npmjs.org` and `api.dev.directionally.ai`. If approval is denied or
-  the command remains unavailable, say Directionally is unavailable for this
-  turn, continue the user's task, and include that issue in the final answer.
-  In Codex, the reusable permission should be granted on the exact argv prefix
-  `["env","DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.1.8"]`,
-  not on a narrower bridge, append, or resume invocation.
+```json
+{"kind":"bridge_started","session_id":"sess_...","sequence":0}
+```
 
-Codex notes:
+`--first` exits after creating the session and sending the elaboration.
+Store `session_id` and initialize the polling cursor to `0` in the agent's own
+session context. The backend assigns `session_id`; the agent only creates local
+`subsession_id` labels such as `run_001`.
 
-- Use `exec_command` for the bridge only when no live bridge exists. Keep the
-  returned Codex command-session handle for stdout polling and reuse it on later
-  requests in the same conversation.
-- Poll stdout with `write_stdin` and empty `chars`.
-- Do not expect an output or input file path; the bridge prints the backend
-  `session_id`.
-- In Codex, run the command as
-  `env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 ...`.
-- If approval is required, start that command with escalation immediately. Do
-  not wait for npm registry DNS, package download, or Directionally API failures
-  before requesting permission.
-- In Codex, the reusable `prefix_rule` **MUST** be exactly
-  `["env","DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.1.8"]`.
-  This is the approval boundary. Do not use the shell-assignment form as a
-  `prefix_rule`, and do not request approval for a narrower `bridge`/`append`/
-  `resume` invocation or a wrapper such as `/bin/bash -lc ...`.
+## Poll Existing Session
 
-Claude notes:
+Before consequential actions and before final answer, poll the existing session:
 
-- Use `Bash` with `run_in_background: true` for the bridge.
-- Use the same
-  `env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 ...`
-  command form as Codex.
-- Poll the background command output at the same decision gates.
-- **Claude Code permission — configure BEFORE first bridge launch**: Before
-  running the bridge for the first time in a session, invoke the `update-config`
-  skill to ensure the project `.claude/settings.json` (or
-  `.claude/settings.local.json`) contains exactly this allow entry:
-  ```
-  "Bash(env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.1.8 *)"
-  ```
-  Ask the `update-config` skill to add that exact string to the project
-  settings' `allowedTools` list if it is not already present. This prevents
-  Claude Code from showing a permission prompt, which would otherwise lead the
-  user to approve the over-broad `"Bash(env *)"` pattern by accident.
-  Do not use broader patterns such as `"Bash(env *)"`, `"Bash(npx *)"`, or
-  `"Bash(DIRECTIONALLY_API_BASE=... npx *)"` — those approve arbitrary commands.
+```bash
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.4 --session <session_id> --after <last_sequence>
+```
+
+The command always emits a terminal `{"kind":"polled","count":N,"after":...}` line
+confirming the poll succeeded. Update `last_sequence` from each event's
+`sequence` field before the `polled` line. Act on:
+
+- `consideration` — retrieved context with `cid` and `text`
+- `polled` — acknowledgment that the poll succeeded; `count` is how many events arrived
+- `bridge_error` — surface if unrecoverable
+
+Other events are session bookkeeping unless they are directly relevant.
 
 ## Protocol
 
-Every message the agent sends uses `op`. Use one stable `subsession_id` per
-subsession (e.g. `"run_001"`). The bridge handles all backend session
-management transparently.
-
-**Elaborations** — write freely, do not wait between writes:
+Every event the agent sends uses `op` and one stable `subsession_id` for the
+current run:
 
 ```json
-{"text":"<current understanding, hypothesis, evidence, intended action, or verification note>","op":"elaborating","subsession_id":"<local_run_id>"}
-{"text":"<another useful decision point>","op":"elaborating","subsession_id":"<local_run_id>"}
+{"op":"elaborating","subsession_id":"run_001","text":"Current understanding or intended action."}
+{"op":"follow_up","subsession_id":"run_001","learning":"Durable learning from this run."}
+{"op":"outcome","subsession_id":"run_001","value":"<see values below>"}
+{"op":"feedback","subsession_id":"run_001","ratings":{"<cid>":85},"reason":"Why the match helped or did not help."}
+{"op":"report","subsession_id":"run_001","did":"What changed or was answered.","issues":"Any blockers or caveats."}
+{"op":"impact_note","subsession_id":"run_001","note":"Concrete decision change or implementation impact."}
 ```
 
-**Closure ops** — send with `append` and read bridge stdout after each one:
+**`elaborating` triggers** — emit at each of these moments, not just at start/end:
 
-```json
-{"learning":"<learning>","op":"follow_up","subsession_id":"<local_run_id>"}
-{"value":"helped_direction|helped_implementation|irrelevant|missing_memory","op":"outcome","subsession_id":"<local_run_id>"}
-{"ratings":{"<cid>":85,"<cid>":20},"reason":"<textual feedback>","op":"feedback","subsession_id":"<local_run_id>"}
-{"did":"<what you ended up doing>","issues":"<issues encountered, if any>","op":"report","subsession_id":"<local_run_id>"}
-{"note":"<how Directionally helped the mission>","op":"impact_note","subsession_id":"<local_run_id>"}
-```
+- Task start: initial reading of the request
+- Before each file edit: what you're changing and why
+- When your plan changes: what you expected vs. what you found
+- When you discover something unexpected: name the finding explicitly
+- Before final answer: what you verified
 
-Bridge stdout is NDJSON. The only kinds you need to act on:
+**`outcome` values:**
 
-- `consideration` — a retrieval result with `cid` and `text`; read stdout at
-  decision gates to collect these. Multiple may arrive per read.
-- `bridge_error` — surface to user if unrecoverable
+- `helped_direction` — considerations shaped which approach to take
+- `helped_implementation` — considerations gave concrete implementation details
+- `irrelevant` — considerations were about unrelated topics
+- `no_context` — Directionally returned nothing; no considerations were surfaced
 
-Everything else is internal bridge state; you do not need to act on it.
+## Workflow
 
-## Elaborating
+1. Start with `--first` if no `session_id` is remembered; otherwise poll with
+   `--session`.
+2. Poll before edits, commands, commits, and final answers.
+3. Keep elaborations concrete: current understanding, evidence, intended action,
+   verification result, or changed decision.
+4. Poll later with `--session`; do not expect the `--first` process to remain
+   running.
 
-Start streaming elaborations immediately from the user's query. The consult
-*is* the work — reuse the existing bridge if present; otherwise open the bridge,
-fire the first elaboration with your initial read of the task, then keep
-working. Each decision point that changes your understanding becomes another
-elaboration, streamed as it forms.
-
-The initial elaboration is sent at connection time via the `--elaboration` flag,
-before `bridge_started` arrives. **Right after the bridge reports `bridge_started`**
-(which arrives once the backend session is confirmed), read stdout once to collect
-any early considerations before doing anything else.
-
-**Before undertaking any action** (edit, command, commit, or search), send a
-brief elaboration of your plan — what you intend to do and why. This makes each
-decision explicit before execution.
-
-The safety boundary: read stdout at least once before any edit, commit, or
-answer.
-
-Good elaborations are concise, observable decision artifacts:
-
-- your initial interpretation of the task
-- assumptions, constraints, or coupling you notice
-- evidence found while inspecting
-- a revised plan after new evidence
-- why a consequential action is ready to take
-- what passed or failed after verification
-
-Do not narrate every step. Do not expose private reasoning or label phases.
-Stream when the decision state changes, not on a fixed cadence.
-
-Do not include a `seq` field.
-
-## Reading considerations
-
-The pattern is **elaborate → read stdout → act**. Do not run more than one
-tool command without reading bridge stdout in between if your understanding of
-the task has changed since the last read.
-
-Elaborate, then read stdout. Do not block — take what is there and move on.
-
-Read stdout at decision gates:
-
-- after every elaboration that changes your understanding of the task
-- before a consequential edit, command, commit, search, or answer
-- before final write-back
-
-Collect any `consideration` lines that have arrived. Each has a `cid` and
-`text`. Use all of them — later ones may supersede earlier ones as the
-retrieval re-ranks, but earlier shallow matches are still useful. If nothing
-has arrived yet, proceed.
-
-Read each consideration's `text` as prior team judgment — something encountered
-before that bears on what you are about to do. Apply it by analogy:
-
-- If it describes something that failed or was reverted, treat it as a constraint
-- If it describes a choice that worked, lean toward it as a default
-- If it does not bear on the current decision, note that and proceed
-
-Before acting, tell the user in one short sentence whether the direction consult
-changed the plan, confirmed it, or found no useful guidance.
-
-## Write back
-
-After completing the task, close the subsession with the following ops in order.
-
-**`follow_up`** — the most important write-back. This is raw material for the
-direction compiler: not a task summary but a reusable behavioral lesson that
-should change what a future agent does when it encounters the same class of
-problem.
-
-Write it with these ingredients:
-
-- **pattern** — name the recurring situation, not just what happened this time
-- **context trigger** — what observable condition should wake this up next time
-- **behavior** — what a future agent should do differently
-- **misread risk** — the plausible wrong interpretation to avoid, when obvious
-- **receipt** — an observable signal that the right path was taken
-
-Good:
-
-> "Middleware that reads expiry but never writes it should be excluded from the
-> fix scope. Trigger: any expiry bug touching both auth and session layers.
-> Behavior: check middleware for writes before including it. Misread risk:
-> assuming middleware involvement because it imports the expiry field. Receipt:
-> grep confirms no write path in middleware."
-
-Bad:
-
-> "Completed the task and the considerations were useful."
-
-```json
-{"learning":"<learning>","op":"follow_up","subsession_id":"<local_run_id>"}
-```
-
-**`report`** — what you ended up doing and any issues encountered:
-
-```json
-{"did":"<what you did>","issues":"<issues, or empty string if none>","op":"report","subsession_id":"<local_run_id>"}
-```
-
-**`outcome`** — one categorical signal:
-
-```json
-{"value":"helped_direction|helped_implementation|irrelevant|missing_memory","op":"outcome","subsession_id":"<local_run_id>"}
-```
-
-**`feedback`** — rate each consideration received, `cid` → score (0–100):
-
-```json
-{"ratings":{"<cid>":85,"<cid>":20},"reason":"<why they were or weren't useful>","op":"feedback","subsession_id":"<local_run_id>"}
-```
-
-**`impact_note`** — how Directionally concretely changed what you did. Must
-cite specific considerations and the decision change. Skip if you cannot meet
-that bar:
-
-```json
-{"note":"<how Directionally helped the mission>","op":"impact_note","subsession_id":"<local_run_id>"}
-```
+Use only the `--setup`, `--first`, and `--session` CLI forms documented here.
+Do not inspect terminal transcripts to discover session state.
