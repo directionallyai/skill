@@ -23,14 +23,14 @@ Before the first command in a project, configure/approve the exact command
 prefix:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.5 ...
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 ...
 ```
 
 
 For Codex reusable approval, use exactly:
 
 ```json
-["env","DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.2.5"]
+["env","DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.2.6"]
 ```
 
 For Cursor project-local permissions, ensure `.cursor/cli.json` includes:
@@ -39,7 +39,7 @@ For Cursor project-local permissions, ensure `.cursor/cli.json` includes:
 {
   "permissions": {
     "allow": [
-      "Shell(env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.5 *)"
+      "Shell(env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 *)"
     ]
   }
 }
@@ -53,7 +53,7 @@ Do not approve broader patterns like `Shell(env *)`, `Shell(npx *)`, or
 If `.schelling/project-id` or the skill files are missing, run setup:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.5 --setup
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 --setup
 ```
 
 Use `--force owner/repo` only when the project id cannot be inferred from a
@@ -64,7 +64,7 @@ GitHub remote.
 If this agent run has no remembered `session_id`, create a new session:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.5 --first --subsession-id <local_run_id> "<initial read of the task>"
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 --first --subsession-id <local_run_id> "<initial read of the task>"
 ```
 
 The elaboration text is a positional argument — no `--elaboration` flag.
@@ -87,7 +87,7 @@ session context. The backend assigns `session_id`; the agent only creates local
 Before consequential actions and before final answer, poll the existing session:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.5 --session <session_id> --after <last_sequence>
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 --session <session_id> --after <last_sequence>
 ```
 
 The command always emits a terminal `{"kind":"polled","count":N,"after":...}` line
