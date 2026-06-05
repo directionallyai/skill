@@ -14,50 +14,11 @@ event polling; agents never invent `session_id` values.
 
 ## First-command Preflight
 
-Directionally commands need internet access to:
-
-- `registry.npmjs.org` for `npx`
-- `api.dev.directionally.ai` for the Directionally backend
-
-Before the first command in a project, configure/approve the exact command
-prefix:
+Directionally commands need internet access to `registry.npmjs.org` and `api.dev.directionally.ai`. Configure/approve the exact command prefix before the first command:
 
 ```bash
 env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 ...
 ```
-
-
-For Codex reusable approval, use exactly:
-
-```json
-["env","DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai","npx","-y","directionally@0.2.6"]
-```
-
-For Cursor project-local permissions, ensure `.cursor/cli.json` includes:
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "Shell(env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 *)"
-    ]
-  }
-}
-```
-
-Do not approve broader patterns like `Shell(env *)`, `Shell(npx *)`, or
-`Shell(env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx *)`.
-
-## Setup
-
-If `.schelling/project-id` or the skill files are missing, run setup:
-
-```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 --setup
-```
-
-Use `--force owner/repo` only when the project id cannot be inferred from a
-GitHub remote.
 
 ## Session Start
 
@@ -69,36 +30,32 @@ env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally
 
 The elaboration text is a positional argument — no `--elaboration` flag.
 
-Run this command **in the foreground** and wait for it to complete before doing anything else. Do not run it in the background or in parallel with other commands — you need its stdout to get the `session_id`.
-
-Read stdout until the CLI emits:
+Run this command **in the foreground** and wait for it to complete before doing anything else. Read stdout until the CLI emits:
 
 ```json
 {"kind":"bridge_started","session_id":"sess_...","sequence":0}
 ```
 
-`--first` exits after creating the session and sending the elaboration.
-Store `session_id` and initialize the polling cursor to `0` in the agent's own
-session context. The backend assigns `session_id`; the agent only creates local
-`subsession_id` labels such as `run_001`.
+Store `session_id` and initialize the polling cursor to `0`. The backend assigns `session_id`; the agent only creates local `subsession_id` labels such as `run_001`.
 
 ## Poll Existing Session
 
-Before consequential actions and before final answer, poll the existing session:
+Always elaborate before polling — the elaboration is what surfaces relevant considerations. The invariant is **elaborate → poll → act**.
+
+Before consequential actions and before wrapping up a request, elaborate what you're about to do or what you verified, then poll:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 --session <session_id> --after <last_sequence>
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 --session <session_id> --after <last_sequence> '<json_op>'
 ```
+
+Pass a JSON op as a positional argument to send it before polling. There is no `--send` flag.
 
 The command always emits a terminal `{"kind":"polled","count":N,"after":...}` line
 confirming the poll succeeded. Update `last_sequence` from each event's
 `sequence` field before the `polled` line. Act on:
 
 - `consideration` — retrieved context with `cid` and `text`
-- `polled` — acknowledgment that the poll succeeded; `count` is how many events arrived
 - `bridge_error` — surface if unrecoverable
-
-Other events are session bookkeeping unless they are directly relevant.
 
 ## Protocol
 
@@ -114,13 +71,21 @@ current run:
 {"op":"impact_note","subsession_id":"run_001","note":"Concrete decision change or implementation impact."}
 ```
 
-**`elaborating` triggers** — emit at each of these moments, not just at start/end:
+Emit any op by passing it as the positional argument to `--session`:
+
+```bash
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 --session <session_id> --after <last_sequence> '{"op":"follow_up","subsession_id":"run_001","learning":"Durable learning from this run."}'
+```
+
+This is the same `--session` command used for polling — the op is sent before the poll fires. All ops use this form: `elaborating` mid-run, and `report`/`outcome`/`follow_up` at the end.
+
+**`elaborating` triggers** — elaborate early and often, at each of these moments:
 
 - Task start: initial reading of the request
-- Before each file edit: what you're changing and why
+- Before editing any files: what you're changing and why (once per logical edit step, not once per file)
 - When your plan changes: what you expected vs. what you found
-- When you discover something unexpected: name the finding explicitly
-- Before final answer: what you verified
+- When you discover something unexpected: name the finding explicitly — then poll immediately
+- Before wrapping up: what you did and verified — then poll before sending the final answer, as considerations at this point may cause reconsideration
 
 **`outcome` values:**
 
@@ -131,13 +96,7 @@ current run:
 
 ## Workflow
 
-1. Start with `--first` if no `session_id` is remembered; otherwise poll with
-   `--session`.
-2. Poll before edits, commands, commits, and final answers.
-3. Keep elaborations concrete: current understanding, evidence, intended action,
-   verification result, or changed decision.
-4. Poll later with `--session`; do not expect the `--first` process to remain
-   running.
-
-Use only the `--setup`, `--first`, and `--session` CLI forms documented here.
-Do not inspect terminal transcripts to discover session state.
+1. Start with `--first` if no `session_id` is remembered; otherwise poll with `--session`.
+2. The invariant is **elaborate → poll → act**. Never poll cold — always elaborate what you're about to do first.
+3. Elaborate and poll early and often: before edits, commands, commits, and before the final answer.
+4. Also elaborate and poll immediately after any unexpected finding.
