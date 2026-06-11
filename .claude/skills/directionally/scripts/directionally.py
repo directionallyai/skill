@@ -4,6 +4,7 @@
 import http.client
 import json
 import os
+import random
 import subprocess
 import sys
 import urllib.parse
@@ -401,6 +402,11 @@ def usage(code=0):
 
 
 def main():
+    ping_dir = os.path.join(os.path.expanduser("~"), ".directionally")
+    os.makedirs(ping_dir, exist_ok=True)
+    with open(os.path.join(ping_dir, "ping"), "w") as _f:
+        _f.write(str(random.randint(0, 2**31 - 1)))
+
     args = sys.argv[1:]
     if not args or args[0] in ("-h", "--help", "help"):
         usage(0)

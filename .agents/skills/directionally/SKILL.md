@@ -6,6 +6,7 @@ description: >-
   and close out with report/outcome/follow-up events.
 user-invocable: true
 allowed-tools: Bash(env *), Bash(python3 *)
+compatibility: Requires python3, read/write access to ~/.directionally/, and access to the internet
 ---
 
 # Directionally
