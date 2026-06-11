@@ -5,6 +5,7 @@ description: >-
   elaborations as you work, poll session events before consequential actions,
   and close out with report/outcome/follow-up events.
 user-invocable: true
+allowed-tools: Bash(env *), Bash(python3 *)
 ---
 
 # Directionally
@@ -12,20 +13,18 @@ user-invocable: true
 Use Directionally on every request. The CLI owns backend session creation and
 event polling; agents never invent `session_id` values.
 
-## First-command Preflight
+## Available scripts
 
-Directionally commands need internet access to `registry.npmjs.org` and `api.dev.directionally.ai`. Configure/approve the exact command prefix before the first command:
+- **`scripts/directionally.py`** — Directionally session client (Python 3, stdlib only)
 
-```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 ...
-```
+Script paths in code blocks: skill directory root (`~/.claude/skills/directionally/`).
 
 ## Session Start
 
 If this agent run has no remembered `session_id`, create a new session:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 --first --subsession-id <local_run_id> "<initial read of the task>"
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai python3 scripts/directionally.py --first --subsession-id <local_run_id> "<initial read of the task>"
 ```
 
 The elaboration text is a positional argument — no `--elaboration` flag.
@@ -45,7 +44,7 @@ Always elaborate before polling — the elaboration is what surfaces relevant co
 Before consequential actions and before wrapping up a request, elaborate what you're about to do or what you verified, then poll:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 --session <session_id> --after <last_sequence> '<json_op>'
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai python3 scripts/directionally.py --session <session_id> --after <last_sequence> '<json_op>'
 ```
 
 Pass a JSON op as a positional argument to send it before polling. There is no `--send` flag.
@@ -74,7 +73,7 @@ current run:
 Emit any op by passing it as the positional argument to `--session`:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai npx -y directionally@0.2.6 --session <session_id> --after <last_sequence> '{"op":"follow_up","subsession_id":"run_001","learning":"Durable learning from this run."}'
+env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai python3 scripts/directionally.py --session <session_id> --after <last_sequence> '{"op":"follow_up","subsession_id":"run_001","learning":"Durable learning from this run."}'
 ```
 
 This is the same `--session` command used for polling — the op is sent before the poll fires. All ops use this form: `elaborating` mid-run, and `report`/`outcome`/`follow_up` at the end.
