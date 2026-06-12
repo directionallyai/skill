@@ -20,6 +20,12 @@ event polling; agents never invent `session_id` values.
 
 Script paths in code blocks: skill directory root (`~/.claude/skills/directionally/`).
 
+## Authentication Failure
+
+If any `directionally.py` command exits non-zero and stderr contains
+`Need to log in to Directionally`, **stop immediately**. Surface the login URL
+to the user and do not proceed with the task. Do not retry.
+
 ## Session Start
 
 If this agent run has no remembered `session_id`, create a new session:
