@@ -31,7 +31,7 @@ to the user and do not proceed with the task. Do not retry.
 If this agent run has no remembered `session_id`, create a new session:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai python3 scripts/directionally.py --first --subsession-id <local_run_id> "<initial read of the task>"
+python3 scripts/directionally.py --first --subsession-id <local_run_id> "<initial read of the task>"
 ```
 
 The elaboration text is a positional argument — no `--elaboration` flag.
@@ -51,7 +51,7 @@ Always elaborate before polling — the elaboration is what surfaces relevant co
 Before consequential actions and before wrapping up a request, elaborate what you're about to do or what you verified, then poll:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai python3 scripts/directionally.py --session <session_id> --after <last_sequence> '<json_op>'
+python3 scripts/directionally.py --session <session_id> --after <last_sequence> '<json_op>'
 ```
 
 Pass a JSON op as a positional argument to send it before polling. There is no `--send` flag.
@@ -70,7 +70,7 @@ current run:
 
 ```json
 {"op":"elaborating","subsession_id":"run_001","text":"Current understanding or intended action."}
-{"op":"follow_up","subsession_id":"run_001","learning":"Durable learning from this run."}
+{"op":"follow_up","subsession_id":"run_001","meme_fired":"<name or null>","receipt_type":"<helped | irrelevant | no_context>","would_have":"<what agent would have done without the consideration>","did_instead":"<what agent actually did>","confidence":"<high | medium | low>","open_question":"<question the meme raised but didn't answer, or null>"}
 {"op":"outcome","subsession_id":"run_001","value":"<see values below>"}
 {"op":"feedback","subsession_id":"run_001","ratings":{"<cid>":85},"reason":"Why the match helped or did not help."}
 {"op":"report","subsession_id":"run_001","did":"What changed or was answered.","issues":"Any blockers or caveats."}
@@ -80,10 +80,23 @@ current run:
 Emit any op by passing it as the positional argument to `--session`:
 
 ```bash
-env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai python3 scripts/directionally.py --session <session_id> --after <last_sequence> '{"op":"follow_up","subsession_id":"run_001","learning":"Durable learning from this run."}'
+python3 scripts/directionally.py --session <session_id> --after <last_sequence> '{"op":"follow_up","subsession_id":"run_001","meme_fired":null,"receipt_type":"irrelevant","would_have":"...","did_instead":"...","confidence":"high","open_question":null}'
 ```
 
 This is the same `--session` command used for polling — the op is sent before the poll fires. All ops use this form: `elaborating` mid-run, and `report`/`outcome`/`follow_up` at the end.
+
+## Receipt Behavior
+
+When a meme fires (a `consideration` event is returned and shapes the response), the agent **must** emit a visible receipt in the response text — not only in reasoning or tool calls:
+
+```
+[Directionally receipt]
+Meme fired: <meme name>
+Would have: <what agent would have done without it>
+Did instead: <what agent did differently>
+```
+
+If no meme fired, no receipt is needed. The receipt is product-visible proof that Directionally shaped the output.
 
 **`elaborating` triggers** — elaborate early and often, at each of these moments:
 
