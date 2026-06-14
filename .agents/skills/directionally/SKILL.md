@@ -91,7 +91,7 @@ When a meme fires (a `consideration` event is returned and shapes the response),
 
 ```
 [Directionally receipt]
-Meme fired: <meme name>
+Instinct fired: <instinct name>
 Would have: <what agent would have done without it>
 Did instead: <what agent did differently>
 ```
