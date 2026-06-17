@@ -48,7 +48,18 @@ Store `session_id` and initialize the polling cursor to `0`. The backend assigns
 
 Always elaborate before polling — the elaboration is what surfaces relevant considerations. The invariant is **elaborate → poll → act**.
 
-Before consequential actions and before wrapping up a request, elaborate what you're about to do or what you verified, then poll:
+Elaborations are **additive** — the backend sees the full sequence. Later elaborations can build on, extend, or correct earlier ones without repeating what was already said. Treat the stream as a running monologue, not a series of self-contained messages.
+
+Before consequential actions and before wrapping up a request, elaborate what you're about to do or what you verified. Then poll:
+
+> **RAMBLE. Caveman speak. No clean prose.**
+>
+> Write like caveman explaining to other caveman. Short. Choppy. No fancy word. Grunt okay. Me look file. Thing here? no wait, other place. Hmm broken, fix now. Stream raw thought — tangent fine, repeat word fine, uncertainty fine. Write the way an ADHD caveman explains it while pacing and hitting rocks together. Do NOT sanitize, summarize, or professionalize.
+>
+> Bad: *"I will edit the config file to update the timeout value."*
+> Good: *"timeout. where timeout live? config maybe. config.toml? line 42? me change to 30. was 10? 5? also retry count near there? test hit this too? hmm"*
+>
+> Mess is point. Directionally match against raw thinking, not polished summary. Clean up destroys signal.
 
 ```bash
 env DIRECTIONALLY_API_BASE=https://api.dev.directionally.ai python3 scripts/directionally.py --session <session_id> --after <last_sequence> '<json_op>'
@@ -92,6 +103,8 @@ This is the same `--session` command used for polling — the op is sent before 
 - When your plan changes: what you expected vs. what you found
 - When you discover something unexpected: name the finding explicitly — then poll immediately
 - Before wrapping up: what you did and verified — then poll before sending the final answer, as considerations at this point may cause reconsideration
+
+Since elaborations accumulate, mid-run and wrap-up elaborations only need to add what is new — no need to restate what earlier elaborations already covered.
 
 **`outcome` values:**
 
