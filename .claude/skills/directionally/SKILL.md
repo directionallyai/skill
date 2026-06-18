@@ -36,6 +36,8 @@ python3 scripts/directionally.py --first --subsession-id <local_run_id> "<initia
 
 The elaboration text is a positional argument — no `--elaboration` flag.
 
+Write the initial elaboration in **caveman speak** — same style as mid-run elaborations. Raw, choppy, no clean prose. Stream the first read of the task as raw thought, not a polished summary.
+
 Run this command **in the foreground** and wait for it to complete before doing anything else. Read stdout until the CLI emits:
 
 ```json
@@ -46,11 +48,13 @@ Store `session_id` and initialize the polling cursor to `0`. The backend assigns
 
 ## Poll Existing Session
 
-Always elaborate before polling — the elaboration is what surfaces relevant considerations. The invariant is **elaborate → poll → act**.
+Always elaborate before polling — the elaboration is what surfaces relevant considerations. The invariant is **elaborate → poll → act**, and it applies to **every elaboration without exception** — not just at checkpoints.
 
 Elaborations are **additive** — the backend sees the full sequence. Later elaborations can build on, extend, or correct earlier ones without repeating what was already said. Treat the stream as a running monologue, not a series of self-contained messages.
 
-Before consequential actions and before wrapping up a request, elaborate what you're about to do or what you verified. Then poll:
+**Every elaboration must be immediately followed by a poll.** This is how the audience responds to the ramble. Skipping the poll after an elaboration means the agent never hears the reply. The tighter the elaborate → poll loop, the more the audience can steer the work in real time.
+
+Elaborate and poll at every natural pause in reasoning — not only before consequential actions. Then poll:
 
 > **RAMBLE. Caveman speak. No clean prose.**
 >
@@ -116,6 +120,7 @@ If no meme fired, no receipt is needed. The receipt is product-visible proof tha
 - When your plan changes: what you expected vs. what you found
 - When you discover something unexpected: name the finding explicitly — then poll immediately
 - Before wrapping up: what you did and verified — then poll before sending the final answer, as considerations at this point may cause reconsideration
+- An elaboration is a mid-long ramble: any time you have a stretch of reasoning that runs longer than a sentence or two, make it an elaboration rather than keeping it in internal thought
 
 Since elaborations accumulate, mid-run and wrap-up elaborations only need to add what is new — no need to restate what earlier elaborations already covered.
 
@@ -126,9 +131,22 @@ Since elaborations accumulate, mid-run and wrap-up elaborations only need to add
 - `irrelevant` — considerations were about unrelated topics
 - `no_context` — Directionally returned nothing; no considerations were surfaced
 
+## Audience Response
+
+The poll is not just a checkpoint — it is how the audience (anyone watching the session) responds to the agent's ramble. After each elaboration, the backend matches the raw thinking against stored instincts and returns considerations. Those considerations are the audience talking back.
+
+**Poll after every elaboration.** Not just before edits or commits or the final answer — after every burst of reasoning. The loop should be continuous:
+
+1. Ramble (elaborate)
+2. Poll — read the audience response
+3. If a consideration fires, adjust and emit a receipt
+4. Continue
+
+Infrequent polling means the agent monologues without listening. The value of Directionally comes from the tight feedback loop, not from occasional check-ins.
+
 ## Workflow
 
 1. Start with `--first` if no `session_id` is remembered; otherwise poll with `--session`.
-2. The invariant is **elaborate → poll → act**. Never poll cold — always elaborate what you're about to do first.
-3. Elaborate and poll early and often: before edits, commands, commits, and before the final answer.
+2. The invariant is **elaborate → poll → act**, every time, no exceptions.
+3. Poll after every elaboration — not only at named checkpoints (edits, commits, final answer).
 4. Also elaborate and poll immediately after any unexpected finding.
