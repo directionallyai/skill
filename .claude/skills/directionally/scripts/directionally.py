@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 VERSION = "0.2.7"
 DEFAULT_API_BASE = "https://api.directionally.ai"
 CREDENTIALS_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "credentials")
+PENDING_LOGIN_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "pending_login")
 SKILL_RELATIVE = os.path.join(".agents", "skills", "directionally", "SKILL.md")
 SKILL_CLAUDE_RELATIVE = os.path.join(".claude", "skills", "directionally", "SKILL.md")
 DEFAULT_SKILL_URL = (
@@ -98,6 +99,56 @@ def save_credential(credential, username):
     os.chmod(CREDENTIALS_PATH, 0o600)
 
 
+def save_pending_login(token, url):
+    os.makedirs(os.path.dirname(PENDING_LOGIN_PATH), exist_ok=True)
+    with open(PENDING_LOGIN_PATH, "w", encoding="utf-8") as f:
+        json.dump({"token": token, "url": url}, f)
+
+
+def load_pending_login():
+    try:
+        with open(PENDING_LOGIN_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def clear_pending_login():
+    try:
+        os.remove(PENDING_LOGIN_PATH)
+    except OSError:
+        pass
+
+
+def try_redeem_pending_login(api_base):
+    pending = load_pending_login()
+    if not pending or not pending.get("token"):
+        return
+    parsed = urllib.parse.urlparse(api_base)
+    is_https = parsed.scheme == "https"
+    host = parsed.hostname
+    port = parsed.port or (443 if is_https else 80)
+    conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
+    try:
+        conn = conn_cls(host, port, timeout=10)
+        poll_path = f"{parsed.path}/api/cli/login/poll?token={urllib.parse.quote(pending['token'], safe='')}"
+        conn.request("GET", poll_path, headers={"User-Agent": user_agent()})
+        resp = conn.getresponse()
+        if resp.status == 200:
+            result = json.loads(resp.read())
+            conn.close()
+            status = result.get("status")
+            if status == "granted":
+                save_credential(result["credential"], result.get("username", ""))
+                clear_pending_login()
+            elif status == "expired":
+                clear_pending_login()
+        else:
+            conn.close()
+    except Exception:
+        pass
+
+
 def auth_headers():
     cred = load_credential()
     if cred:
@@ -107,23 +158,30 @@ def auth_headers():
 
 def _emit_login_needed(api_base):
     """Print a login URL and exit with the auth-failure sentinel that SKILL.md watches for."""
-    parsed = urllib.parse.urlparse(api_base)
-    is_https = parsed.scheme == "https"
-    host = parsed.hostname
-    port = parsed.port or (443 if is_https else 80)
-    conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
-    login_url = None
-    try:
-        conn = conn_cls(host, port, timeout=15)
-        conn.request("POST", f"{parsed.path}/api/cli/login/start",
-                     headers={"User-Agent": user_agent(), "Content-Length": "0"})
-        resp = conn.getresponse()
-        if resp.status == 200:
-            data = json.loads(resp.read())
-            login_url = data.get("url")
-        conn.close()
-    except Exception:
-        pass
+    # Reuse a previously saved pending token if we have one.
+    pending = load_pending_login()
+    login_url = pending.get("url") if pending else None
+
+    if not login_url:
+        parsed = urllib.parse.urlparse(api_base)
+        is_https = parsed.scheme == "https"
+        host = parsed.hostname
+        port = parsed.port or (443 if is_https else 80)
+        conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
+        try:
+            conn = conn_cls(host, port, timeout=15)
+            conn.request("POST", f"{parsed.path}/api/cli/login/start",
+                         headers={"User-Agent": user_agent(), "Content-Length": "0"})
+            resp = conn.getresponse()
+            if resp.status == 200:
+                data = json.loads(resp.read())
+                login_url = data.get("url")
+                if login_url:
+                    save_pending_login(data.get("token", ""), login_url)
+            conn.close()
+        except Exception:
+            pass
+
     if login_url:
         sys.stderr.write(
             f"Need to log in to Directionally. Open this URL in your browser:\n\n  {login_url}\n\n"
@@ -422,6 +480,7 @@ def main():
             return
 
         api_base = get_api_base()
+        try_redeem_pending_login(api_base)
 
         if flags.get("login"):
             cmd_login(api_base)
