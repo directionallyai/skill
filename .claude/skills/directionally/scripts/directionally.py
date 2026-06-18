@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 VERSION = "0.2.7"
 DEFAULT_API_BASE = "https://api.directionally.ai"
-CREDENTIALS_PATH = os.path.join(os.path.expanduser("~"), ".config", "directionally", "credentials")
+CREDENTIALS_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "credentials")
 SKILL_RELATIVE = os.path.join(".agents", "skills", "directionally", "SKILL.md")
 SKILL_CLAUDE_RELATIVE = os.path.join(".claude", "skills", "directionally", "SKILL.md")
 DEFAULT_SKILL_URL = (
