@@ -7,13 +7,14 @@ import os
 import random
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
-VERSION = "0.2.6"
+VERSION = "0.2.7"
 DEFAULT_API_BASE = "https://api.directionally.ai"
-PROJECT_ID_RELATIVE = os.path.join(".schelling", "project-id")
+CREDENTIALS_PATH = os.path.join(os.path.expanduser("~"), ".config", "directionally", "credentials")
 SKILL_RELATIVE = os.path.join(".agents", "skills", "directionally", "SKILL.md")
 SKILL_CLAUDE_RELATIVE = os.path.join(".claude", "skills", "directionally", "SKILL.md")
 DEFAULT_SKILL_URL = (
@@ -94,41 +95,129 @@ def find_git_root(start_dir):
         return None
 
 
-def find_schelling_root(start_dir):
-    d = os.path.realpath(start_dir)
-    while True:
-        if os.path.exists(os.path.join(d, PROJECT_ID_RELATIVE)):
-            return d
-        parent = os.path.dirname(d)
-        if parent == d:
-            return None
-        d = parent
-
-
-def find_project_root(start_dir):
-    return find_git_root(start_dir) or find_schelling_root(start_dir)
-
-
 def get_project_id(start_dir):
-    root = find_project_root(start_dir)
-    if not root:
+    git_root = find_git_root(start_dir)
+    if not git_root:
         return None
     try:
-        with open(os.path.join(root, PROJECT_ID_RELATIVE), "r", encoding="utf-8") as f:
-            for line in f:
-                stripped = line.strip()
-                if stripped:
-                    return stripped
-    except OSError:
-        pass
-    return None
+        remotes = subprocess.check_output(
+            ["git", "-C", git_root, "remote", "-v"],
+            stderr=subprocess.DEVNULL,
+            encoding="utf-8",
+        )
+    except Exception:
+        return None
+    repo = pick_github_repo(remotes)
+    if not repo:
+        return None
+    return f"{repo['owner']}/{repo['name']}"
 
 
 def require_project_id():
-    pid = get_project_id(os.getcwd())
-    if not pid:
-        raise ValueError("no project_id found; run `directionally --setup` first")
-    return pid
+    return get_project_id(os.getcwd()) or "global"
+
+
+def load_credential():
+    try:
+        with open(CREDENTIALS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data.get("credential")
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def save_credential(credential, github_login):
+    os.makedirs(os.path.dirname(CREDENTIALS_PATH), exist_ok=True)
+    with open(CREDENTIALS_PATH, "w", encoding="utf-8") as f:
+        json.dump({"credential": credential, "github_login": github_login}, f)
+    os.chmod(CREDENTIALS_PATH, 0o600)
+
+
+def auth_headers():
+    cred = load_credential()
+    if cred:
+        return {"Authorization": f"Bearer {cred}"}
+    return {}
+
+
+def _emit_login_needed(api_base):
+    """Print a login URL and exit with the auth-failure sentinel that SKILL.md watches for."""
+    parsed = urllib.parse.urlparse(api_base)
+    is_https = parsed.scheme == "https"
+    host = parsed.hostname
+    port = parsed.port or (443 if is_https else 80)
+    conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
+    login_url = None
+    try:
+        conn = conn_cls(host, port, timeout=15)
+        conn.request("POST", f"{parsed.path}/api/cli/login/start",
+                     headers={"User-Agent": user_agent(), "Content-Length": "0"})
+        resp = conn.getresponse()
+        if resp.status == 200:
+            data = json.loads(resp.read())
+            login_url = data.get("url")
+        conn.close()
+    except Exception:
+        pass
+    if login_url:
+        sys.stderr.write(
+            f"Need to log in to Directionally. Open this URL in your browser:\n\n  {login_url}\n\n"
+            "Then re-run your command.\n"
+        )
+    else:
+        sys.stderr.write("Need to log in to Directionally. Run: directionally.py --login\n")
+    sys.exit(1)
+
+
+def cmd_login(api_base):
+    parsed = urllib.parse.urlparse(api_base)
+    is_https = parsed.scheme == "https"
+    host = parsed.hostname
+    port = parsed.port or (443 if is_https else 80)
+
+    conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
+    conn = conn_cls(host, port, timeout=30)
+    conn.request("POST", f"{parsed.path}/api/cli/login/start",
+                 headers={"User-Agent": user_agent(), "Content-Length": "0"})
+    resp = conn.getresponse()
+    if resp.status != 200:
+        raise RuntimeError(f"login start failed: HTTP {resp.status}")
+    data = json.loads(resp.read())
+    conn.close()
+
+    cli_token = data["token"]
+    login_url = data["url"]
+    expires_in = data.get("expires_in_seconds", 900)
+
+    sys.stdout.write(f"\nOpen this URL to log in with GitHub:\n\n  {login_url}\n\nWaiting for login")
+    sys.stdout.flush()
+
+    deadline = time.time() + expires_in
+    poll_interval = 3
+    while time.time() < deadline:
+        time.sleep(poll_interval)
+        sys.stdout.write(".")
+        sys.stdout.flush()
+        conn = conn_cls(host, port, timeout=15)
+        poll_path = f"{parsed.path}/api/cli/login/poll?token={urllib.parse.quote(cli_token, safe='')}"
+        conn.request("GET", poll_path, headers={"User-Agent": user_agent()})
+        poll_resp = conn.getresponse()
+        if poll_resp.status == 200:
+            result = json.loads(poll_resp.read())
+            conn.close()
+            status = result.get("status")
+            if status == "granted":
+                sys.stdout.write("\n")
+                save_credential(result["credential"], result.get("github_login", ""))
+                sys.stdout.write(f"Logged in as {result.get('github_login', 'unknown')}.\n")
+                sys.stdout.write(f"Credential saved to {CREDENTIALS_PATH}\n")
+                return
+            if status == "expired":
+                raise RuntimeError("Login expired. Run --login again.")
+        else:
+            conn.close()
+
+    raise RuntimeError("Login timed out. Run --login again.")
 
 
 def parse_github_remote(url):
@@ -226,7 +315,6 @@ def cmd_setup(flags):
     files = [
         {**write_if_changed(os.path.join(target_root, SKILL_RELATIVE), skill_body), "rel": SKILL_RELATIVE},
         {**write_if_changed(os.path.join(target_root, SKILL_CLAUDE_RELATIVE), skill_body), "rel": SKILL_CLAUDE_RELATIVE},
-        {**write_if_changed(os.path.join(target_root, PROJECT_ID_RELATIVE), project_id + "\n"), "rel": PROJECT_ID_RELATIVE},
     ]
 
     lines = [f"Project: {project_id} (from {project_source})", f"Root: {target_root}", ""]
@@ -259,9 +347,15 @@ def open_first_session(project_id, api_base, initial_message):
             "Accept": "application/x-ndjson",
             "User-Agent": user_agent(),
             "Content-Length": str(len(body)),
+            **auth_headers(),
         },
     )
     resp = conn.getresponse()
+
+    if resp.status == 401:
+        resp.read()
+        conn.close()
+        _emit_login_needed(api_base)
 
     if resp.status < 200 or resp.status >= 300:
         err_body = resp.read(500).decode("utf-8", errors="replace")
@@ -328,6 +422,7 @@ def send_ops(session_id, api_base, ops):
                 "Content-Type": "application/x-ndjson",
                 "User-Agent": user_agent(),
                 "Content-Length": str(len(body)),
+                **auth_headers(),
             },
         )
         resp = conn.getresponse()
@@ -368,7 +463,7 @@ def poll_session(project_id, api_base, flags):
     )
     req = urllib.request.Request(
         url,
-        headers={"Accept": "application/x-ndjson", "User-Agent": user_agent()},
+        headers={"Accept": "application/x-ndjson", "User-Agent": user_agent(), **auth_headers()},
     )
     try:
         with urllib.request.urlopen(req, timeout=wait + 10) as resp:
@@ -389,6 +484,7 @@ def poll_session(project_id, api_base, flags):
 def usage(code=0):
     msg = "\n".join([
         "Usage:",
+        "  directionally.py --login",
         "  directionally.py --setup [--cwd <path>] [--force <owner/repo>]",
         "  directionally.py --first --subsession-id <id> <text>",
         "  directionally.py --session <session_id> [--after <seq>] [--wait <secs>] [--limit <n>]",
@@ -419,6 +515,11 @@ def main():
             return
 
         api_base = get_api_base()
+
+        if flags.get("login"):
+            cmd_login(api_base)
+            return
+
         project_id = require_project_id()
 
         if flags.get("first"):
