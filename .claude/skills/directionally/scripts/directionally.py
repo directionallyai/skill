@@ -5,7 +5,6 @@ import http.client
 import json
 import os
 import random
-import subprocess
 import sys
 import time
 import urllib.parse
@@ -82,40 +81,6 @@ def number_flag(value, fallback, name):
     return n
 
 
-def find_git_root(start_dir):
-    try:
-        out = subprocess.check_output(
-            ["git", "-C", start_dir, "rev-parse", "--is-inside-work-tree", "--show-toplevel"],
-            stderr=subprocess.DEVNULL,
-            encoding="utf-8",
-        )
-        lines = [l.strip() for l in out.splitlines() if l.strip()]
-        return lines[1] if lines and lines[0] == "true" and len(lines) > 1 else None
-    except Exception:
-        return None
-
-
-def get_project_id(start_dir):
-    git_root = find_git_root(start_dir)
-    if not git_root:
-        return None
-    try:
-        remotes = subprocess.check_output(
-            ["git", "-C", git_root, "remote", "-v"],
-            stderr=subprocess.DEVNULL,
-            encoding="utf-8",
-        )
-    except Exception:
-        return None
-    repo = pick_github_repo(remotes)
-    if not repo:
-        return None
-    return f"{repo['owner']}/{repo['name']}"
-
-
-def require_project_id():
-    return get_project_id(os.getcwd()) or "global"
-
 
 def load_credential():
     try:
@@ -126,10 +91,10 @@ def load_credential():
         return None
 
 
-def save_credential(credential, github_login):
+def save_credential(credential, username):
     os.makedirs(os.path.dirname(CREDENTIALS_PATH), exist_ok=True)
     with open(CREDENTIALS_PATH, "w", encoding="utf-8") as f:
-        json.dump({"credential": credential, "github_login": github_login}, f)
+        json.dump({"credential": credential, "username": username}, f)
     os.chmod(CREDENTIALS_PATH, 0o600)
 
 
@@ -208,8 +173,8 @@ def cmd_login(api_base):
             status = result.get("status")
             if status == "granted":
                 sys.stdout.write("\n")
-                save_credential(result["credential"], result.get("github_login", ""))
-                sys.stdout.write(f"Logged in as {result.get('github_login', 'unknown')}.\n")
+                save_credential(result["credential"], result.get("username", ""))
+                sys.stdout.write(f"Logged in as {result.get('username', 'unknown')}.\n")
                 sys.stdout.write(f"Credential saved to {CREDENTIALS_PATH}\n")
                 return
             if status == "expired":
@@ -219,40 +184,6 @@ def cmd_login(api_base):
 
     raise RuntimeError("Login timed out. Run --login again.")
 
-
-def parse_github_remote(url):
-    import re
-    ssh = re.match(r"^git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$", url, re.IGNORECASE)
-    if ssh:
-        return {"owner": ssh.group(1), "name": ssh.group(2)}
-    https_ = re.match(
-        r"^(?:https?://|ssh://git@|git://)?(?:[^@]+@)?github\.com[/:]([^/]+)/([^/]+?)(?:\.git)?/?$",
-        url,
-        re.IGNORECASE,
-    )
-    if https_:
-        return {"owner": https_.group(1), "name": https_.group(2)}
-    return None
-
-
-def pick_github_repo(remotes_output):
-    import re
-    origin = None
-    first = None
-    for line in remotes_output.splitlines():
-        m = re.match(r"^(\S+)\s+(\S+)\s+\((?:fetch|push)\)\s*$", line)
-        if not m:
-            continue
-        name, url = m.group(1), m.group(2)
-        repo = parse_github_remote(url)
-        if not repo:
-            continue
-        entry = {**repo, "remote_name": name, "remote_url": url}
-        if name == "origin" and origin is None:
-            origin = entry
-        if first is None:
-            first = entry
-    return origin or first
 
 
 def write_if_changed(file_path, content):
@@ -282,32 +213,7 @@ def cmd_setup(flags):
     cwd = flags.get("cwd")
     if not cwd or cwd is True:
         cwd = os.getcwd()
-    forced_id = flags.get("force")
-    if forced_id is True:
-        forced_id = None
-
-    git_root = find_git_root(cwd)
-    target_root = git_root or os.path.realpath(cwd)
-
-    if forced_id:
-        project_id = forced_id
-        project_source = "--force"
-    elif git_root:
-        try:
-            remotes = subprocess.check_output(
-                ["git", "-C", git_root, "remote", "-v"],
-                stderr=subprocess.DEVNULL,
-                encoding="utf-8",
-            )
-        except Exception:
-            remotes = ""
-        repo = pick_github_repo(remotes)
-        if not repo:
-            raise ValueError("Could not find a github.com remote. Use --force <owner/repo>.")
-        project_id = f"{repo['owner']}/{repo['name']}"
-        project_source = f"{repo['remote_name']} {repo['remote_url']}"
-    else:
-        raise ValueError("Could not find a git root. Use --force <owner/repo>.")
+    target_root = os.path.realpath(cwd)
 
     skill_url = os.environ.get("DIRECTIONALLY_SKILL_URL", DEFAULT_SKILL_URL)
     skill_body = download_skill(skill_url)
@@ -317,13 +223,14 @@ def cmd_setup(flags):
         {**write_if_changed(os.path.join(target_root, SKILL_CLAUDE_RELATIVE), skill_body), "rel": SKILL_CLAUDE_RELATIVE},
     ]
 
-    lines = [f"Project: {project_id} (from {project_source})", f"Root: {target_root}", ""]
+    lines = [f"Root: {target_root}", ""]
     for f in files:
         lines.append(f"  {f['action']:<9} {f['rel']}")
     sys.stdout.write("\n".join(lines) + "\n")
 
 
-def open_first_session(project_id, api_base, initial_message):
+def open_first_session(api_base, initial_message):
+    project_id = "global"
     parsed = urllib.parse.urlparse(api_base)
     is_https = parsed.scheme == "https"
     host = parsed.hostname
@@ -386,7 +293,6 @@ def open_first_session(project_id, api_base, initial_message):
             write_ndjson({
                 "kind": "bridge_started",
                 "api_base": api_base,
-                "project_id": project_id,
                 "session_id": obj["session_id"],
                 "sequence": sequence,
                 "received_at": now_iso(),
@@ -437,7 +343,8 @@ def send_ops(session_id, api_base, ops):
         conn.close()
 
 
-def poll_session(project_id, api_base, flags):
+def poll_session(api_base, flags):
+    project_id = "global"
     session_id = flags.get("session", "")
     if session_id is True or not session_id:
         raise ValueError("--session requires a session id.")
@@ -485,7 +392,7 @@ def usage(code=0):
     msg = "\n".join([
         "Usage:",
         "  directionally.py --login",
-        "  directionally.py --setup [--cwd <path>] [--force <owner/repo>]",
+        "  directionally.py --setup [--cwd <path>]",
         "  directionally.py --first --subsession-id <id> <text>",
         "  directionally.py --session <session_id> [--after <seq>] [--wait <secs>] [--limit <n>]",
         "",
@@ -520,8 +427,6 @@ def main():
             cmd_login(api_base)
             return
 
-        project_id = require_project_id()
-
         if flags.get("first"):
             subsession_id = flags.get("subsession_id")
             if subsession_id is True:
@@ -532,11 +437,11 @@ def main():
                 if subsession_id and text
                 else None
             )
-            open_first_session(project_id, api_base, initial_message)
+            open_first_session(api_base, initial_message)
             return
 
         if flags.get("session"):
-            poll_session(project_id, api_base, flags)
+            poll_session(api_base, flags)
             return
 
         usage(1)
