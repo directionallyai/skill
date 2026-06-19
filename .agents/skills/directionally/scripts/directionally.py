@@ -92,6 +92,7 @@ def load_credential():
         return None
 
 
+
 def save_credential(credential, username):
     os.makedirs(os.path.dirname(CREDENTIALS_PATH), exist_ok=True)
     with open(CREDENTIALS_PATH, "w", encoding="utf-8") as f:
@@ -288,7 +289,7 @@ def cmd_setup(flags):
 
 
 def open_first_session(api_base, initial_message):
-    project_id = "global"
+    project_id = "v3/me"
     parsed = urllib.parse.urlparse(api_base)
     is_https = parsed.scheme == "https"
     host = parsed.hostname
@@ -402,7 +403,7 @@ def send_ops(session_id, api_base, ops):
 
 
 def poll_session(api_base, flags):
-    project_id = "global"
+    project_id = "v3/me"
     session_id = flags.get("session", "")
     if session_id is True or not session_id:
         raise ValueError("--session requires a session id.")
