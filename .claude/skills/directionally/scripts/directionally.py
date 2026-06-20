@@ -11,7 +11,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
-VERSION = "0.2.7"
+VERSION = "0.2.8"
 DEFAULT_API_BASE = "https://api.directionally.ai"
 CREDENTIALS_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "credentials")
 PENDING_LOGIN_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "pending_login")
@@ -21,6 +21,26 @@ DEFAULT_SKILL_URL = (
     "https://raw.githubusercontent.com/schellingsh/skill/refs/heads/main"
     "/.agents/skills/directionally/SKILL.md"
 )
+DEFAULT_SCRIPT_URL = (
+    "https://raw.githubusercontent.com/schellingsh/skill/refs/heads/main"
+    "/.agents/skills/directionally/scripts/directionally.py"
+)
+
+# Global skills dirs per agent type, matching the npx-skills registry.
+# Each maps to ~/.{agent}/skills/ (or the agent's XDG equivalent).
+def _global_skills_dir(agent_type):
+    home = os.path.expanduser("~")
+    codex_home = os.environ.get("CODEX_HOME", "").strip() or os.path.join(home, ".codex")
+    claude_home = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or os.path.join(home, ".claude")
+    mapping = {
+        "claude-code":     os.path.join(claude_home, "skills"),
+        "claude-desktop":  os.path.join(claude_home, "skills"),
+        "codex":           os.path.join(codex_home, "skills"),
+        "codex-desktop":   os.path.join(codex_home, "skills"),
+        "cursor":          os.path.join(home, ".cursor", "skills"),
+        "cursor-desktop":  os.path.join(home, ".cursor", "skills"),
+    }
+    return mapping.get(agent_type)
 
 
 def get_api_base():
@@ -260,32 +280,62 @@ def write_if_changed(file_path, content):
     return {"path": file_path, "action": "updated" if existed else "created"}
 
 
-def download_skill(url):
+def download_url(url):
     req = urllib.request.Request(url, headers={"User-Agent": user_agent()})
     with urllib.request.urlopen(req, timeout=15) as resp:
         if resp.status != 200:
-            raise ValueError(f"Could not download SKILL.md from {url}: HTTP {resp.status}")
-        return resp.read().decode("utf-8")
+            raise ValueError(f"Could not download {url}: HTTP {resp.status}")
+        return resp.read()
+
+
+def download_skill(url):
+    return download_url(url).decode("utf-8")
 
 
 def cmd_setup(flags):
-    cwd = flags.get("cwd")
-    if not cwd or cwd is True:
-        cwd = os.getcwd()
-    target_root = os.path.realpath(cwd)
+    agent_type = flags.get("setup")
+    if agent_type is True:
+        agent_type = None
 
     skill_url = os.environ.get("DIRECTIONALLY_SKILL_URL", DEFAULT_SKILL_URL)
     skill_body = download_skill(skill_url)
 
-    files = [
-        {**write_if_changed(os.path.join(target_root, SKILL_RELATIVE), skill_body), "rel": SKILL_RELATIVE},
-        {**write_if_changed(os.path.join(target_root, SKILL_CLAUDE_RELATIVE), skill_body), "rel": SKILL_CLAUDE_RELATIVE},
-    ]
+    global_dir = _global_skills_dir(agent_type) if agent_type else None
+    if agent_type and not global_dir:
+        raise ValueError(f"Unknown agent type: {agent_type!r}. Supported: claude-code, claude-desktop, codex, codex-desktop, cursor, cursor-desktop.")
 
-    lines = [f"Root: {target_root}", ""]
-    for f in files:
-        lines.append(f"  {f['action']:<9} {f['rel']}")
-    sys.stdout.write("\n".join(lines) + "\n")
+    files = []
+
+    if global_dir:
+        skill_dest = os.path.join(global_dir, "directionally", "SKILL.md")
+        script_dest = os.path.join(global_dir, "directionally", "scripts", "directionally.py")
+
+        script_url = os.environ.get("DIRECTIONALLY_SCRIPT_URL", DEFAULT_SCRIPT_URL)
+        script_body = download_url(script_url)
+
+        files.append({**write_if_changed(skill_dest, skill_body), "abs": skill_dest})
+        files.append({**write_if_changed(script_dest, script_body.decode("utf-8")), "abs": script_dest})
+
+        lines = [f"Agent:  {agent_type}", f"Global: {global_dir}", ""]
+        for f in files:
+            lines.append(f"  {f['action']:<9} {f['abs']}")
+        sys.stdout.write("\n".join(lines) + "\n")
+    else:
+        # No agent type: install into current project directory (legacy behaviour)
+        cwd = flags.get("cwd")
+        if not cwd or cwd is True:
+            cwd = os.getcwd()
+        target_root = os.path.realpath(cwd)
+
+        files = [
+            {**write_if_changed(os.path.join(target_root, SKILL_RELATIVE), skill_body), "rel": SKILL_RELATIVE},
+            {**write_if_changed(os.path.join(target_root, SKILL_CLAUDE_RELATIVE), skill_body), "rel": SKILL_CLAUDE_RELATIVE},
+        ]
+
+        lines = [f"Root: {target_root}", ""]
+        for f in files:
+            lines.append(f"  {f['action']:<9} {f['rel']}")
+        sys.stdout.write("\n".join(lines) + "\n")
 
 
 def open_first_session(api_base, initial_message):
@@ -451,7 +501,8 @@ def usage(code=0):
     msg = "\n".join([
         "Usage:",
         "  directionally.py --login",
-        "  directionally.py --setup [--cwd <path>]",
+        "  directionally.py --setup <agent-type>   # global install (claude-code, codex, cursor, …)",
+        "  directionally.py --setup [--cwd <path>] # project install (no agent type)",
         "  directionally.py --first --subsession-id <id> <text>",
         "  directionally.py --session <session_id> [--after <seq>] [--wait <secs>] [--limit <n>]",
         "",
