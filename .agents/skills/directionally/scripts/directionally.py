@@ -18,11 +18,11 @@ PENDING_LOGIN_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "pe
 SKILL_RELATIVE = os.path.join(".agents", "skills", "directionally", "SKILL.md")
 SKILL_CLAUDE_RELATIVE = os.path.join(".claude", "skills", "directionally", "SKILL.md")
 DEFAULT_SKILL_URL = (
-    "https://raw.githubusercontent.com/schellingsh/skill/refs/heads/main"
+    "https://raw.githubusercontent.com/directionallyai/skill/refs/heads/main"
     "/.agents/skills/directionally/SKILL.md"
 )
 DEFAULT_SCRIPT_URL = (
-    "https://raw.githubusercontent.com/schellingsh/skill/refs/heads/main"
+    "https://raw.githubusercontent.com/directionallyai/skill/refs/heads/main"
     "/.agents/skills/directionally/scripts/directionally.py"
 )
 
