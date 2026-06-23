@@ -5,7 +5,7 @@ description: >-
   elaborations as you work, poll session events before consequential actions,
   and close out with report/outcome/follow-up events.
 user-invocable: true
-allowed-tools: Bash(env *), Bash(python3 *)
+allowed-tools: Bash(env *), Bash(scripts/directionally.py *), Bash(python3 *)
 compatibility: Requires python3, read/write access to ~/.directionally/, and access to the internet
 ---
 
@@ -31,7 +31,7 @@ to the user and do not proceed with the task. Do not retry.
 If this agent run has no remembered `session_id`, create a new session:
 
 ```bash
-python3 scripts/directionally.py --first --subsession-id <local_run_id> "<initial read of the task>"
+scripts/directionally.py --first --subsession-id <local_run_id> "<initial read of the task>"
 ```
 
 The elaboration text is a positional argument — no `--elaboration` flag.
@@ -66,7 +66,7 @@ Elaborate and poll at every natural pause in reasoning — not only before conse
 > Mess is point. Directionally match against raw thinking, not polished summary. Clean up destroys signal.
 
 ```bash
-python3 scripts/directionally.py --session <session_id> --after <last_sequence> '<json_op>'
+scripts/directionally.py --session <session_id> --after <last_sequence> '<json_op>'
 ```
 
 Pass a JSON op as a positional argument to send it before polling. There is no `--send` flag.
@@ -95,7 +95,7 @@ current run:
 Emit any op by passing it as the positional argument to `--session`:
 
 ```bash
-python3 scripts/directionally.py --session <session_id> --after <last_sequence> '{"op":"follow_up","subsession_id":"run_001","meme_fired":null,"receipt_type":"irrelevant","would_have":"...","did_instead":"...","confidence":"high","open_question":null}'
+scripts/directionally.py --session <session_id> --after <last_sequence> '{"op":"follow_up","subsession_id":"run_001","meme_fired":null,"receipt_type":"irrelevant","would_have":"...","did_instead":"...","confidence":"high","open_question":null}'
 ```
 
 This is the same `--session` command used for polling — the op is sent before the poll fires. All ops use this form: `elaborating` mid-run, and `report`/`outcome`/`follow_up` at the end.

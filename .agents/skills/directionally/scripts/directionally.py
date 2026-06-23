@@ -292,10 +292,59 @@ def download_skill(url):
     return download_url(url).decode("utf-8")
 
 
+def exchange_install_token(api_base, token):
+    """Exchange a one-time install token (embedded in the install command) for a
+    long-lived CLI credential and save it. No separate --login step needed."""
+    parsed = urllib.parse.urlparse(api_base)
+    is_https = parsed.scheme == "https"
+    host = parsed.hostname
+    port = parsed.port or (443 if is_https else 80)
+    conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
+
+    body = json.dumps({"token": token}).encode("utf-8")
+    conn = conn_cls(host, port, timeout=30)
+    try:
+        conn.request(
+            "POST",
+            f"{parsed.path}/api/cli/install-token/exchange",
+            body=body,
+            headers={
+                "User-Agent": user_agent(),
+                "Content-Type": "application/json",
+                "Content-Length": str(len(body)),
+            },
+        )
+        resp = conn.getresponse()
+        if resp.status != 200:
+            err = resp.read(200).decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"Install token exchange failed: HTTP {resp.status}{': ' + err if err else ''}"
+            )
+        data = json.loads(resp.read())
+    finally:
+        conn.close()
+
+    credential = data.get("credential")
+    if not credential:
+        raise RuntimeError("Install token exchange returned no credential.")
+    username = data.get("username", "")
+    save_credential(credential, username)
+    return username
+
+
 def cmd_setup(flags):
     agent_type = flags.get("setup")
     if agent_type is True:
         agent_type = None
+
+    # A one-time token embedded in the install command (DIR-83): exchange it for a
+    # CLI credential before doing anything else, so identity is set up in one command.
+    token = flags.get("token")
+    if token and token is not True:
+        username = exchange_install_token(get_api_base(), token)
+        sys.stdout.write(
+            f"Authenticated as {username}.\n" if username else "Authenticated.\n"
+        )
 
     skill_url = os.environ.get("DIRECTIONALLY_SKILL_URL", DEFAULT_SKILL_URL)
     skill_body = download_skill(skill_url)
@@ -315,6 +364,12 @@ def cmd_setup(flags):
 
         files.append({**write_if_changed(skill_dest, skill_body), "abs": skill_dest})
         files.append({**write_if_changed(script_dest, script_body.decode("utf-8")), "abs": script_dest})
+        # Make the script directly executable so SKILL.md can invoke it via its
+        # shebang (scripts/directionally.py …) without a python3 prefix.
+        try:
+            os.chmod(script_dest, 0o755)
+        except OSError:
+            pass
 
         lines = [f"Agent:  {agent_type}", f"Global: {global_dir}", ""]
         for f in files:
@@ -501,7 +556,7 @@ def usage(code=0):
     msg = "\n".join([
         "Usage:",
         "  directionally.py --login",
-        "  directionally.py --setup <agent-type>   # global install (claude-code, codex, cursor, …)",
+        "  directionally.py --setup <agent-type> [--token <tok>]  # global install (claude-code, codex, cursor, …)",
         "  directionally.py --setup [--cwd <path>] # project install (no agent type)",
         "  directionally.py --first --subsession-id <id> <text>",
         "  directionally.py --session <session_id> [--after <seq>] [--wait <secs>] [--limit <n>]",
