@@ -5,7 +5,7 @@ description: >-
   elaborations as you work, poll session events before consequential actions,
   and close out with report/outcome/follow-up events.
 user-invocable: true
-allowed-tools: Bash(env *), Bash(scripts/directionally.py *), Bash(python3 *)
+allowed-tools: Bash(env:*), Bash(scripts/directionally.py:*), Bash(python3:*)
 compatibility: Requires python3, read/write access to ~/.directionally/, and access to the internet
 ---
 
