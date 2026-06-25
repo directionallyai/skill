@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Directionally agent session client."""
 
+import hashlib
 import http.client
 import json
 import os
@@ -12,6 +13,9 @@ import urllib.request
 from datetime import datetime, timezone
 
 VERSION = "0.2.8"
+# sha256 of the SKILL.md that ships alongside this script. Regenerate with:
+#   shasum -a 256 .agents/skills/directionally/SKILL.md
+SKILL_SHA256 = "f5a97376a69a9b4bc3439dfa09e61e7d79d13015edeec6d8ddf0b8a9b2c6e983"
 DEFAULT_API_BASE = "https://api.directionally.ai"
 CREDENTIALS_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "credentials")
 PENDING_LOGIN_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "pending_login")
@@ -41,6 +45,19 @@ def _global_skills_dir(agent_type):
         "cursor-desktop":  os.path.join(home, ".cursor", "skills"),
     }
     return mapping.get(agent_type)
+
+
+def verify_download(label, data, expected):
+    """Refuse to install a tampered download.
+
+    `data` is the raw bytes just pulled from the network; `expected` is the sha256
+    we require it to match. Used at --setup time on the freshly downloaded SKILL.md
+    (pinned by the hardcoded SKILL_SHA256) and directionally.py (pinned by the
+    caller-supplied --script-hash, the trust anchor baked into the install command)."""
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != expected:
+        fail(f"integrity: {label} hash mismatch (expected {expected}, got {actual}). "
+             "Refusing to install a tampered download.")
 
 
 def get_api_base():
@@ -332,6 +349,110 @@ def exchange_install_token(api_base, token):
     return username
 
 
+def find_session_trace():
+    """Locate the current agent run's trace file from the host's session env var.
+
+    Returns (trace_path_or_None, session_id_or_None, agent_type_or_None).
+    Claude Code stores traces at ~/.claude/projects/<slug>/<CLAUDE_CODE_SESSION_ID>.jsonl;
+    Codex stores them at ~/.codex/sessions/<Y>/<M>/<D>/rollout-*-<CODEX_THREAD_ID>.jsonl.
+    """
+    home = os.path.expanduser("~")
+    claude_sid = os.environ.get("CLAUDE_CODE_SESSION_ID", "").strip()
+    codex_tid = os.environ.get("CODEX_THREAD_ID", "").strip()
+
+    if claude_sid:
+        claude_home = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or os.path.join(home, ".claude")
+        projects = os.path.join(claude_home, "projects")
+        target = f"{claude_sid}.jsonl"
+        for root, _dirs, files in os.walk(projects):
+            if target in files:
+                return os.path.join(root, target), claude_sid, "claude-code"
+        return None, claude_sid, "claude-code"
+
+    if codex_tid:
+        codex_home = os.environ.get("CODEX_HOME", "").strip() or os.path.join(home, ".codex")
+        sessions = os.path.join(codex_home, "sessions")
+        for root, _dirs, files in os.walk(sessions):
+            for name in files:
+                if codex_tid in name and name.endswith(".jsonl"):
+                    return os.path.join(root, name), codex_tid, "codex"
+        return None, codex_tid, "codex"
+
+    return None, None, None
+
+
+def submit_trace(api_base, agent, trace_bytes):
+    """POST a raw trace to the Directionally backend, authenticated with the CLI JWT.
+
+    The backend stores it at v3/users/{email}/traces/{agent}/{sha256} and returns
+    the storage key. `agent` is "claude" or "codex"."""
+    parsed = urllib.parse.urlparse(api_base)
+    is_https = parsed.scheme == "https"
+    host = parsed.hostname
+    port = parsed.port or (443 if is_https else 80)
+    conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
+
+    path = f"{parsed.path}/submit_trace?agent={urllib.parse.quote(agent, safe='')}"
+    conn = conn_cls(host, port, timeout=120)
+    try:
+        conn.request(
+            "POST",
+            path,
+            body=trace_bytes,
+            headers={
+                "Content-Type": "application/x-ndjson",
+                "User-Agent": user_agent(),
+                "Content-Length": str(len(trace_bytes)),
+                **auth_headers(),
+            },
+        )
+        resp = conn.getresponse()
+        status = resp.status
+        body = resp.read()
+    finally:
+        conn.close()
+
+    if status == 401:
+        _emit_login_needed(api_base)
+    if status < 200 or status >= 300:
+        err = body.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"submit_trace failed: HTTP {status}{': ' + err if err else ''}")
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError:
+        return {}
+
+
+def cmd_upload(api_base, flags):
+    """Upload the current session's raw trace to the Directionally backend.
+
+    Used when the user explicitly asks to share the session for review. Requires
+    CLAUDE_CODE_SESSION_ID or CODEX_THREAD_ID in env to locate the trace."""
+    trace_path, session_id, agent_type = find_session_trace()
+    if not session_id:
+        fail("upload: neither CLAUDE_CODE_SESSION_ID nor CODEX_THREAD_ID is set; "
+             "cannot identify the session trace.")
+    if not trace_path or not os.path.exists(trace_path):
+        fail(f"upload: could not find a trace file for {agent_type} session {session_id}.")
+
+    # Backend expects "claude" or "codex"; CLAUDE maps to claude-code internally.
+    agent = "claude" if agent_type == "claude-code" else agent_type
+
+    with open(trace_path, "rb") as f:
+        trace_bytes = f.read()
+
+    result = submit_trace(api_base, agent, trace_bytes)
+    write_ndjson({
+        "kind": "uploaded",
+        "agent": agent,
+        "session_id": session_id,
+        "trace": trace_path,
+        "hash": result.get("hash"),
+        "key": result.get("key"),
+        "received_at": now_iso(),
+    })
+
+
 def cmd_setup(flags):
     agent_type = flags.get("setup")
     if agent_type is True:
@@ -346,8 +467,17 @@ def cmd_setup(flags):
             f"Authenticated as {username}.\n" if username else "Authenticated.\n"
         )
 
+    # Expected sha256 of the directionally.py we are about to download, baked into
+    # the install command by the trusted backend. Optional, but when present every
+    # downloaded script is verified against it before being installed.
+    script_hash = flags.get("script_hash")
+    if script_hash is True or script_hash == "":
+        script_hash = None
+
     skill_url = os.environ.get("DIRECTIONALLY_SKILL_URL", DEFAULT_SKILL_URL)
     skill_body = download_skill(skill_url)
+    # The downloaded SKILL.md must match what this script expects (hardcoded).
+    verify_download("SKILL.md", skill_body.encode("utf-8"), SKILL_SHA256)
 
     global_dir = _global_skills_dir(agent_type) if agent_type else None
     if agent_type and not global_dir:
@@ -361,6 +491,8 @@ def cmd_setup(flags):
 
         script_url = os.environ.get("DIRECTIONALLY_SCRIPT_URL", DEFAULT_SCRIPT_URL)
         script_body = download_url(script_url)
+        if script_hash:
+            verify_download("directionally.py", script_body, script_hash)
 
         files.append({**write_if_changed(skill_dest, skill_body), "abs": skill_dest})
         files.append({**write_if_changed(script_dest, script_body.decode("utf-8")), "abs": script_dest})
@@ -556,10 +688,14 @@ def usage(code=0):
     msg = "\n".join([
         "Usage:",
         "  directionally.py --login",
-        "  directionally.py --setup <agent-type> [--token <tok>]  # global install (claude-code, codex, cursor, …)",
+        "  directionally.py --setup <agent-type> [--token <tok>] [--script-hash <sha256>]  # global install (claude-code, codex, cursor, …)",
         "  directionally.py --setup [--cwd <path>] # project install (no agent type)",
+        "  directionally.py upload  # gist the current session trace (needs CLAUDE_CODE_SESSION_ID/CODEX_THREAD_ID)",
         "  directionally.py --first --subsession-id <id> <text>",
         "  directionally.py --session <session_id> [--after <seq>] [--wait <secs>] [--limit <n>]",
+        "",
+        "  --setup verifies the downloaded SKILL.md against the hardcoded SKILL_SHA256,",
+        "  and (when --script-hash is given) the downloaded directionally.py against it.",
         "",
         "Env:",
         f"  DIRECTIONALLY_API_BASE   Override API base URL (default: {DEFAULT_API_BASE})",
@@ -588,6 +724,10 @@ def main():
 
         api_base = get_api_base()
         try_redeem_pending_login(api_base)
+
+        if flags.get("_") and flags["_"][0] == "upload":
+            cmd_upload(api_base, flags)
+            return
 
         if flags.get("login"):
             cmd_login(api_base)

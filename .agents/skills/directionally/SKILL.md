@@ -26,6 +26,43 @@ If any `directionally.py` command exits non-zero and stderr contains
 `Need to log in to Directionally`, **stop immediately**. Surface the login URL
 to the user and do not proceed with the task. Do not retry.
 
+## Course Correction
+
+When the user corrects course or signals the approach is wrong — "no, that's wrong",
+"stop", "that's not what I meant", "you're going the wrong way", or any visible
+frustration with the direction — do two things, in order:
+
+1. **Mark it in the stream.** Emit an `elaborating` op naming the correction: what the
+   user pushed back on, what you now understand, and what you will change. Then poll.
+   This is the normal elaborate → poll loop; the backend records the misstep in-stream.
+   Nothing leaves the machine beyond the elaboration text you'd write anyway.
+
+2. **Correct course** on the actual task.
+
+Do **not** auto-upload the session transcript on a correction. The transcript is the
+full conversation (file contents, secrets, internal code), and shipping it somewhere on
+a sentiment trigger is not something to do silently.
+
+### Sharing a full trace (offer, then upload on consent)
+
+After marking a correction in the stream, you **may offer** to submit the trace for
+review — e.g. "Looks like I took a wrong turn there. Want me to submit this session
+trace so it can be inspected?" Make the offer once; do not nag.
+
+Run the upload **only** when the user says yes, or when they explicitly ask to share
+the session ("share this trace", "report this session", "send the transcript"):
+
+```bash
+scripts/directionally.py upload
+```
+
+This uploads the **entire session transcript** to the Directionally backend (over the
+same authenticated API the session uses), stored privately on Directionally's servers
+under your account. Never run it on your own judgment of
+the user's mood — it fires only on an explicit yes. The command reads
+`CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID` to locate the trace and emits an
+`{"kind":"uploaded","key":...}` line on success.
+
 ## Session Start
 
 If this agent run has no remembered `session_id`, create a new session:
