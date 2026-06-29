@@ -6,13 +6,15 @@ import http.client
 import json
 import os
 import random
+import ssl
 import sys
 import time
 import urllib.parse
 import urllib.request
+import zipfile
 from datetime import datetime, timezone
 
-VERSION = "0.2.8"
+VERSION = "0.2.9"
 # sha256 of the SKILL.md that ships alongside this script. Regenerate with:
 #   shasum -a 256 .agents/skills/directionally/SKILL.md
 SKILL_SHA256 = "f5a97376a69a9b4bc3439dfa09e61e7d79d13015edeec6d8ddf0b8a9b2c6e983"
@@ -29,6 +31,14 @@ DEFAULT_SCRIPT_URL = (
     "https://raw.githubusercontent.com/directionallyai/skill/refs/heads/main"
     "/.agents/skills/directionally/scripts/directionally.py"
 )
+CERTIFI_WHEEL_NAME = "certifi-2026.6.17-py3-none-any.whl"
+CERTIFI_WHEEL_URL = (
+    "https://files.pythonhosted.org/packages/ef/2f/"
+    "c5464532e965badff2f4c4c1a3a83f5697f0d7c407ed0cda44aaa99bb451/"
+    "certifi-2026.6.17-py3-none-any.whl"
+)
+CERTIFI_WHEEL_SHA256 = "2227dcbaafe0d2f59279d1762ddddc37783ed4354594f194ffc31d20f41fc3db"
+_TLS_CONTEXTS = {}
 
 # Global skills dirs per agent type, matching the npx-skills registry.
 # Each maps to ~/.{agent}/skills/ (or the agent's XDG equivalent).
@@ -80,6 +90,187 @@ def write_ndjson(obj):
 def fail(message, code=1):
     sys.stderr.write(message + "\n")
     sys.exit(code)
+
+
+def sha256_bytes(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def _env_ca_file():
+    for name in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"):
+        path = os.environ.get(name, "").strip()
+        if path:
+            return path
+    return None
+
+
+def _has_default_ca_store():
+    paths = ssl.get_default_verify_paths()
+    if paths.cafile and os.path.exists(paths.cafile):
+        return True
+    if paths.capath and os.path.isdir(paths.capath):
+        try:
+            if any(os.scandir(paths.capath)):
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def _certifi_cache_dir():
+    return os.environ.get("DIRECTIONALLY_CERTIFI_CACHE", "").strip() or os.path.join(
+        os.path.expanduser("~"), ".directionally", "certifi"
+    )
+
+
+def _certifi_from_installed_package():
+    try:
+        import certifi  # type: ignore
+    except Exception:
+        return None
+    try:
+        path = certifi.where()
+    except Exception:
+        return None
+    return path if path and os.path.exists(path) else None
+
+
+def _download_pinned_certifi_wheel(cache):
+    path = os.path.join(cache, CERTIFI_WHEEL_NAME)
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            data = f.read()
+        if sha256_bytes(data) == CERTIFI_WHEEL_SHA256:
+            return path
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+    if os.environ.get("DIRECTIONALLY_OFFLINE"):
+        return None
+
+    req = urllib.request.Request(CERTIFI_WHEEL_URL, headers={"User-Agent": user_agent()})
+    # This artifact is pinned by sha256. Use an unverified TLS context only for
+    # bootstrapping a CA bundle on Python installs that have no CA store at all.
+    with urllib.request.urlopen(req, timeout=30, context=ssl._create_unverified_context()) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"certifi download failed: HTTP {resp.status}")
+        data = resp.read()
+    got = sha256_bytes(data)
+    if got != CERTIFI_WHEEL_SHA256:
+        raise RuntimeError(
+            f"certifi sha256 mismatch (expected {CERTIFI_WHEEL_SHA256}, got {got})"
+        )
+    os.makedirs(cache, exist_ok=True)
+    tmp = path + ".part"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.replace(tmp, path)
+    return path
+
+
+def _certifi_from_pinned_wheel():
+    cache = _certifi_cache_dir()
+    pem_path = os.path.join(cache, CERTIFI_WHEEL_NAME + ".cacert.pem")
+    if os.path.exists(pem_path):
+        return pem_path
+
+    wheel_path = _download_pinned_certifi_wheel(cache)
+    if not wheel_path:
+        return None
+
+    with zipfile.ZipFile(wheel_path) as zf:
+        data = zf.read("certifi/cacert.pem")
+    os.makedirs(cache, exist_ok=True)
+    tmp = pem_path + ".part"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.replace(tmp, pem_path)
+    return pem_path
+
+
+def certifi_ca_file():
+    cafile = _certifi_from_installed_package() or _certifi_from_pinned_wheel()
+    if not cafile:
+        raise RuntimeError(
+            "No usable Python CA bundle found. Set SSL_CERT_FILE or install certifi."
+        )
+    return cafile
+
+
+def tls_context(force_certifi=False):
+    cafile = _env_ca_file()
+    if force_certifi and not cafile:
+        cafile = certifi_ca_file()
+    elif not cafile and not _has_default_ca_store():
+        cafile = certifi_ca_file()
+
+    cache_key = cafile or "__default__"
+    if cache_key not in _TLS_CONTEXTS:
+        _TLS_CONTEXTS[cache_key] = ssl.create_default_context(cafile=cafile)
+    return _TLS_CONTEXTS[cache_key]
+
+
+def _is_cert_verification_error(exc):
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        return True
+    reason = getattr(exc, "reason", None)
+    if reason is not None and _is_cert_verification_error(reason):
+        return True
+    for attr in ("__cause__", "__context__"):
+        nested = getattr(exc, attr, None)
+        if nested is not None and _is_cert_verification_error(nested):
+            return True
+    for arg in getattr(exc, "args", ()):
+        if isinstance(arg, BaseException) and _is_cert_verification_error(arg):
+            return True
+    return False
+
+
+def _should_retry_with_certifi(exc):
+    return not _env_ca_file() and _is_cert_verification_error(exc)
+
+
+def connection_for(parsed, timeout, force_certifi=False):
+    is_https = parsed.scheme == "https"
+    host = parsed.hostname
+    port = parsed.port or (443 if is_https else 80)
+    if is_https:
+        return http.client.HTTPSConnection(
+            host, port, timeout=timeout, context=tls_context(force_certifi=force_certifi)
+        )
+    return http.client.HTTPConnection(host, port, timeout=timeout)
+
+
+def request_with_tls_retry(parsed, timeout, method, path, body=None, headers=None):
+    force_certifi = False
+    while True:
+        conn = connection_for(parsed, timeout=timeout, force_certifi=force_certifi)
+        try:
+            conn.request(method, path, body=body, headers=headers or {})
+            return conn, conn.getresponse()
+        except Exception as e:
+            conn.close()
+            if parsed.scheme == "https" and not force_certifi and _should_retry_with_certifi(e):
+                force_certifi = True
+                continue
+            raise
+
+
+def urlopen_with_tls(req, timeout):
+    url = req.full_url if isinstance(req, urllib.request.Request) else str(req)
+    if urllib.parse.urlparse(url).scheme != "https":
+        return urllib.request.urlopen(req, timeout=timeout)
+
+    try:
+        return urllib.request.urlopen(req, timeout=timeout, context=tls_context())
+    except Exception as e:
+        if _should_retry_with_certifi(e):
+            return urllib.request.urlopen(
+                req, timeout=timeout, context=tls_context(force_certifi=True)
+            )
+        raise
 
 
 def parse_args(args):
@@ -163,15 +354,11 @@ def try_redeem_pending_login(api_base):
     if not pending or not pending.get("token"):
         return
     parsed = urllib.parse.urlparse(api_base)
-    is_https = parsed.scheme == "https"
-    host = parsed.hostname
-    port = parsed.port or (443 if is_https else 80)
-    conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
     try:
-        conn = conn_cls(host, port, timeout=10)
         poll_path = f"{parsed.path}/api/cli/login/poll?token={urllib.parse.quote(pending['token'], safe='')}"
-        conn.request("GET", poll_path, headers={"User-Agent": user_agent()})
-        resp = conn.getresponse()
+        conn, resp = request_with_tls_retry(
+            parsed, 10, "GET", poll_path, headers={"User-Agent": user_agent()}
+        )
         if resp.status == 200:
             result = json.loads(resp.read())
             conn.close()
@@ -202,15 +389,14 @@ def _emit_login_needed(api_base):
 
     if not login_url:
         parsed = urllib.parse.urlparse(api_base)
-        is_https = parsed.scheme == "https"
-        host = parsed.hostname
-        port = parsed.port or (443 if is_https else 80)
-        conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
         try:
-            conn = conn_cls(host, port, timeout=15)
-            conn.request("POST", f"{parsed.path}/api/cli/login/start",
-                         headers={"User-Agent": user_agent(), "Content-Length": "0"})
-            resp = conn.getresponse()
+            conn, resp = request_with_tls_retry(
+                parsed,
+                15,
+                "POST",
+                f"{parsed.path}/api/cli/login/start",
+                headers={"User-Agent": user_agent(), "Content-Length": "0"},
+            )
             if resp.status == 200:
                 data = json.loads(resp.read())
                 login_url = data.get("url")
@@ -232,15 +418,14 @@ def _emit_login_needed(api_base):
 
 def cmd_login(api_base):
     parsed = urllib.parse.urlparse(api_base)
-    is_https = parsed.scheme == "https"
-    host = parsed.hostname
-    port = parsed.port or (443 if is_https else 80)
 
-    conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
-    conn = conn_cls(host, port, timeout=30)
-    conn.request("POST", f"{parsed.path}/api/cli/login/start",
-                 headers={"User-Agent": user_agent(), "Content-Length": "0"})
-    resp = conn.getresponse()
+    conn, resp = request_with_tls_retry(
+        parsed,
+        30,
+        "POST",
+        f"{parsed.path}/api/cli/login/start",
+        headers={"User-Agent": user_agent(), "Content-Length": "0"},
+    )
     if resp.status != 200:
         raise RuntimeError(f"login start failed: HTTP {resp.status}")
     data = json.loads(resp.read())
@@ -259,10 +444,10 @@ def cmd_login(api_base):
         time.sleep(poll_interval)
         sys.stdout.write(".")
         sys.stdout.flush()
-        conn = conn_cls(host, port, timeout=15)
         poll_path = f"{parsed.path}/api/cli/login/poll?token={urllib.parse.quote(cli_token, safe='')}"
-        conn.request("GET", poll_path, headers={"User-Agent": user_agent()})
-        poll_resp = conn.getresponse()
+        conn, poll_resp = request_with_tls_retry(
+            parsed, 15, "GET", poll_path, headers={"User-Agent": user_agent()}
+        )
         if poll_resp.status == 200:
             result = json.loads(poll_resp.read())
             conn.close()
@@ -299,7 +484,7 @@ def write_if_changed(file_path, content):
 
 def download_url(url):
     req = urllib.request.Request(url, headers={"User-Agent": user_agent()})
-    with urllib.request.urlopen(req, timeout=15) as resp:
+    with urlopen_with_tls(req, timeout=15) as resp:
         if resp.status != 200:
             raise ValueError(f"Could not download {url}: HTTP {resp.status}")
         return resp.read()
@@ -313,15 +498,13 @@ def exchange_install_token(api_base, token):
     """Exchange a one-time install token (embedded in the install command) for a
     long-lived CLI credential and save it. No separate --login step needed."""
     parsed = urllib.parse.urlparse(api_base)
-    is_https = parsed.scheme == "https"
-    host = parsed.hostname
-    port = parsed.port or (443 if is_https else 80)
-    conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
 
     body = json.dumps({"token": token}).encode("utf-8")
-    conn = conn_cls(host, port, timeout=30)
+    conn = None
     try:
-        conn.request(
+        conn, resp = request_with_tls_retry(
+            parsed,
+            30,
             "POST",
             f"{parsed.path}/api/cli/install-token/exchange",
             body=body,
@@ -331,7 +514,6 @@ def exchange_install_token(api_base, token):
                 "Content-Length": str(len(body)),
             },
         )
-        resp = conn.getresponse()
         if resp.status != 200:
             err = resp.read(200).decode("utf-8", errors="replace")
             raise RuntimeError(
@@ -339,7 +521,8 @@ def exchange_install_token(api_base, token):
             )
         data = json.loads(resp.read())
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
     credential = data.get("credential")
     if not credential:
@@ -387,15 +570,13 @@ def submit_trace(api_base, agent, trace_bytes):
     The backend stores it at v3/users/{email}/traces/{agent}/{sha256} and returns
     the storage key. `agent` is "claude" or "codex"."""
     parsed = urllib.parse.urlparse(api_base)
-    is_https = parsed.scheme == "https"
-    host = parsed.hostname
-    port = parsed.port or (443 if is_https else 80)
-    conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
 
     path = f"{parsed.path}/submit_trace?agent={urllib.parse.quote(agent, safe='')}"
-    conn = conn_cls(host, port, timeout=120)
+    conn = None
     try:
-        conn.request(
+        conn, resp = request_with_tls_retry(
+            parsed,
+            120,
             "POST",
             path,
             body=trace_bytes,
@@ -406,11 +587,11 @@ def submit_trace(api_base, agent, trace_bytes):
                 **auth_headers(),
             },
         )
-        resp = conn.getresponse()
         status = resp.status
         body = resp.read()
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
     if status == 401:
         _emit_login_needed(api_base)
@@ -528,20 +709,16 @@ def cmd_setup(flags):
 def open_first_session(api_base, initial_message):
     project_id = "v3/me"
     parsed = urllib.parse.urlparse(api_base)
-    is_https = parsed.scheme == "https"
-    host = parsed.hostname
-    port = parsed.port or (443 if is_https else 80)
     path = f"{parsed.path}/sessions/{urllib.parse.quote(project_id, safe='')}"
-
-    conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
-    conn = conn_cls(host, port, timeout=120)
 
     body_parts = []
     if initial_message:
         body_parts.append(json.dumps(initial_message) + "\n")
     body = "".join(body_parts).encode("utf-8")
 
-    conn.request(
+    conn, resp = request_with_tls_retry(
+        parsed,
+        120,
         "POST",
         path,
         body=body or None,
@@ -553,7 +730,6 @@ def open_first_session(api_base, initial_message):
             **auth_headers(),
         },
     )
-    resp = conn.getresponse()
 
     if resp.status == 401:
         resp.read()
@@ -607,16 +783,14 @@ def open_first_session(api_base, initial_message):
 
 def send_ops(session_id, api_base, ops):
     parsed = urllib.parse.urlparse(api_base)
-    is_https = parsed.scheme == "https"
-    host = parsed.hostname
-    port = parsed.port or (443 if is_https else 80)
     path = f"{parsed.path}/session/resume/{urllib.parse.quote(session_id, safe='')}"
     body = ("\n".join(json.dumps(op) for op in ops) + "\n").encode("utf-8")
 
-    conn_cls = http.client.HTTPSConnection if is_https else http.client.HTTPConnection
-    conn = conn_cls(host, port, timeout=30)
+    conn = None
     try:
-        conn.request(
+        conn, resp = request_with_tls_retry(
+            parsed,
+            30,
             "POST",
             path,
             body=body,
@@ -627,7 +801,6 @@ def send_ops(session_id, api_base, ops):
                 **auth_headers(),
             },
         )
-        resp = conn.getresponse()
         if resp.status < 200 or resp.status >= 300:
             err_body = resp.read(200).decode("utf-8", errors="replace")
             sys.stderr.write(f"directionally: ops not sent: HTTP {resp.status}{': ' + err_body if err_body else ''}\n")
@@ -636,7 +809,8 @@ def send_ops(session_id, api_base, ops):
     except Exception as e:
         sys.stderr.write(f"directionally: ops not sent: {e}\n")
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 
 def poll_session(api_base, flags):
@@ -669,7 +843,7 @@ def poll_session(api_base, flags):
         headers={"Accept": "application/x-ndjson", "User-Agent": user_agent(), **auth_headers()},
     )
     try:
-        with urllib.request.urlopen(req, timeout=wait + 10) as resp:
+        with urlopen_with_tls(req, timeout=wait + 10) as resp:
             text = resp.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         err_body = e.read().decode("utf-8", errors="replace")
