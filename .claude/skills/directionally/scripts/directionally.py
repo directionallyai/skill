@@ -14,7 +14,7 @@ import urllib.request
 import zipfile
 from datetime import datetime, timezone
 
-VERSION = "0.2.9"
+VERSION = "0.2.10"
 # sha256 of the SKILL.md that ships alongside this script. Regenerate with:
 #   shasum -a 256 .agents/skills/directionally/SKILL.md
 SKILL_SHA256 = "f5a97376a69a9b4bc3439dfa09e61e7d79d13015edeec6d8ddf0b8a9b2c6e983"
@@ -46,6 +46,7 @@ def _global_skills_dir(agent_type):
     home = os.path.expanduser("~")
     codex_home = os.environ.get("CODEX_HOME", "").strip() or os.path.join(home, ".codex")
     claude_home = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or os.path.join(home, ".claude")
+    config_home = os.environ.get("XDG_CONFIG_HOME", "").strip() or os.path.join(home, ".config")
     mapping = {
         "claude-code":     os.path.join(claude_home, "skills"),
         "claude-desktop":  os.path.join(claude_home, "skills"),
@@ -53,6 +54,7 @@ def _global_skills_dir(agent_type):
         "codex-desktop":   os.path.join(codex_home, "skills"),
         "cursor":          os.path.join(home, ".cursor", "skills"),
         "cursor-desktop":  os.path.join(home, ".cursor", "skills"),
+        "opencode":        os.path.join(config_home, "opencode", "skills"),
     }
     return mapping.get(agent_type)
 
@@ -662,7 +664,7 @@ def cmd_setup(flags):
 
     global_dir = _global_skills_dir(agent_type) if agent_type else None
     if agent_type and not global_dir:
-        raise ValueError(f"Unknown agent type: {agent_type!r}. Supported: claude-code, claude-desktop, codex, codex-desktop, cursor, cursor-desktop.")
+        raise ValueError(f"Unknown agent type: {agent_type!r}. Supported: claude-code, claude-desktop, codex, codex-desktop, cursor, cursor-desktop, opencode.")
 
     files = []
 
@@ -862,7 +864,7 @@ def usage(code=0):
     msg = "\n".join([
         "Usage:",
         "  directionally.py --login",
-        "  directionally.py --setup <agent-type> [--token <tok>] [--script-hash <sha256>]  # global install (claude-code, codex, cursor, …)",
+        "  directionally.py --setup <agent-type> [--token <tok>] [--script-hash <sha256>]  # global install (claude-code, codex, cursor, opencode, …)",
         "  directionally.py --setup [--cwd <path>] # project install (no agent type)",
         "  directionally.py upload  # gist the current session trace (needs CLAUDE_CODE_SESSION_ID/CODEX_THREAD_ID)",
         "  directionally.py --first --subsession-id <id> <text>",
