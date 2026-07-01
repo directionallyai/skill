@@ -115,6 +115,48 @@ confirming the poll succeeded. Update `last_sequence` from each event's
 - `consideration` — retrieved context with `cid` and `text`
 - `bridge_error` — surface if unrecoverable
 
+## Activation Test
+
+When the user asks to "run a Directionally activation test", "check if Directionally is active", or similar, verify activation by **using Directionally normally** — do not invent a separate check or add a new command. Activation is proven only by a real session → elaboration → poll round-trip completing in *this* agent context. A positive narrative without an actual poll result is **not** active.
+
+1. **Elaborate + poll** using the existing flow:
+   - No remembered `session_id` → run the [Session Start](#session-start) command with the activation-test elaboration.
+   - A remembered `session_id` → run the [Poll Existing Session](#poll-existing-session) command with the activation-test elaboration.
+
+   Suggested elaboration text:
+
+   > Activation test: user wants to verify Directionally is loaded in this agent and can return considerations in the real agent context.
+
+2. **Inspect the result** and report one plain status to the user:
+   - **Directionally is active in this agent.** — the poll returned the normal Directionally stream (`bridge_started` / `polled`, plus a `consideration` if a meme fired).
+   - **Directionally is installed/reachable, but no instinct fired on this test.** — the round-trip succeeded but returned no `consideration`.
+   - **Directionally needs login or token setup.** — stderr contained `Need to log in to Directionally` (see [Authentication Failure](#authentication-failure)).
+   - **Directionally could not reach the backend.** — network/TLS error before any response.
+   - **Directionally may not be loaded by this agent app or this chat/session.** — the script itself could not be invoked.
+   - **Unclear; email support@directionally.ai with the activation-test output.**
+
+Installer completion or local file presence does **not** prove activation — only a real session/elaboration/poll result does. This test proves the active path is available; it does not prove first useful value.
+
+### If the test fails or is unclear
+
+Describe the encountered problem with enough debugging detail for support to recover — **without** attempting a full environment diagnosis. Include only what is known:
+
+- **Stage** reached: skill invocation, command execution, auth, session start, elaboration send, poll, response parsing, or unknown.
+- **Command family** attempted (e.g. `--first`, `--session`) — never the full command with a token.
+- **API base** if visible.
+- **Python executable/version** if a Python command ran.
+- **OS/platform** if visible.
+- **Credential present?** boolean only.
+- **Pending login present?** boolean only.
+- **`SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` configured?** booleans only.
+- **Error type / HTTP status** if available.
+- **Concise, sanitized error message.**
+- **One concrete next step.**
+
+Then tell the user to email **support@directionally.ai** with an evidence packet: agent app, OS, install output, activation-test output/error, and whether they reloaded/restarted the app.
+
+**Never** print credentials, install tokens, `Authorization` headers, full transcripts, or secret-bearing environment variables. Do not attempt broad cert / Python / PATH / sandbox diagnosis beyond classifying and reporting the failure.
+
 ## Protocol
 
 Every event the agent sends uses `op` and one stable `subsession_id` for the
