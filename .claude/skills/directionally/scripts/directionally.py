@@ -19,6 +19,7 @@ VERSION = "0.2.10"
 #   shasum -a 256 .agents/skills/directionally/SKILL.md
 SKILL_SHA256 = "7bd7bf3711b83437e3f415180341c636162a8df51211eb34a13a198318b8cada"
 DEFAULT_API_BASE = "https://api.directionally.ai"
+DEFAULT_WEB_BASE = "https://directionally.ai"
 CREDENTIALS_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "credentials")
 PENDING_LOGIN_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "pending_login")
 SKILL_RELATIVE = os.path.join(".agents", "skills", "directionally", "SKILL.md")
@@ -74,6 +75,17 @@ def verify_download(label, data, expected):
 
 def get_api_base():
     return os.environ.get("DIRECTIONALLY_API_BASE", DEFAULT_API_BASE).rstrip("/")
+
+
+def get_web_base(api_base=None):
+    override = os.environ.get("DIRECTIONALLY_WEB_BASE", "").strip()
+    if override:
+        return override.rstrip("/")
+    api_base = (api_base or get_api_base()).rstrip("/")
+    parsed = urllib.parse.urlparse(api_base)
+    if parsed.hostname == "api.dev.directionally.ai":
+        return "https://dev.directionally.ai"
+    return DEFAULT_WEB_BASE
 
 
 def user_agent():
@@ -534,6 +546,66 @@ def exchange_install_token(api_base, token):
     return username
 
 
+def fetch_active_pack_names(api_base):
+    parsed = urllib.parse.urlparse(api_base)
+    conn = None
+    try:
+        conn, resp = request_with_tls_retry(
+            parsed,
+            15,
+            "GET",
+            f"{parsed.path}/api/user/plan",
+            headers={"User-Agent": user_agent(), **auth_headers()},
+        )
+        status = resp.status
+        body = resp.read()
+    finally:
+        if conn:
+            conn.close()
+
+    if status < 200 or status >= 300:
+        raise RuntimeError(f"plan lookup failed: HTTP {status}")
+
+    data = json.loads(body)
+    active = data.get("active_packs") or {}
+    catalog = data.get("packs") or {}
+    ids = []
+    for group in ("standard", "premium", "private"):
+        values = active.get(group) or []
+        if isinstance(values, list):
+            ids.extend(str(v) for v in values if v)
+
+    seen = set()
+    names = []
+    for pack_id in ids:
+        if pack_id in seen:
+            continue
+        seen.add(pack_id)
+        pack = catalog.get(pack_id) or {}
+        names.append(pack.get("display_name") or pack_id)
+    return names
+
+
+def print_post_setup_status(api_base):
+    dashboard_url = f"{get_web_base(api_base)}/#/dashboard?section=packs"
+    sys.stdout.write("\nDashboard: " + dashboard_url + "\n")
+    try:
+        names = fetch_active_pack_names(api_base)
+    except Exception as exc:
+        sys.stdout.write(
+            "Active pack names: could not be loaded from your account yet "
+            f"({exc}). Open the dashboard to confirm them.\n"
+        )
+        return
+
+    if names:
+        sys.stdout.write("Active pack names:\n")
+        for name in names:
+            sys.stdout.write(f"  - {name}\n")
+    else:
+        sys.stdout.write("Active pack names: none reported yet. Open the dashboard to choose packs.\n")
+
+
 def find_session_trace():
     """Locate the current agent run's trace file from the host's session env var.
 
@@ -640,12 +712,13 @@ def cmd_setup(flags):
     agent_type = flags.get("setup")
     if agent_type is True:
         agent_type = None
+    api_base = get_api_base()
 
     # A one-time token embedded in the install command (DIR-83): exchange it for a
     # CLI credential before doing anything else, so identity is set up in one command.
     token = flags.get("token")
     if token and token is not True:
-        username = exchange_install_token(get_api_base(), token)
+        username = exchange_install_token(api_base, token)
         sys.stdout.write(
             f"Authenticated as {username}.\n" if username else "Authenticated.\n"
         )
@@ -706,6 +779,8 @@ def cmd_setup(flags):
         for f in files:
             lines.append(f"  {f['action']:<9} {f['rel']}")
         sys.stdout.write("\n".join(lines) + "\n")
+
+    print_post_setup_status(api_base)
 
 
 def open_first_session(api_base, initial_message):
