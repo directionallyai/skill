@@ -179,18 +179,36 @@ scripts/directionally.py --session <session_id> --after <last_sequence> '{"op":"
 
 This is the same `--session` command used for polling — the op is sent before the poll fires. All ops use this form: `elaborating` mid-run, and `report`/`outcome`/`follow_up` at the end.
 
-## Receipt Behavior
+## Surface Markers (Receipt Behavior)
 
-When a meme fires (a `consideration` event is returned and shapes the response), the agent **must** emit a visible receipt in the response text — not only in reasoning or tool calls:
+**Universal rule: every time the agent interacts with Directionally, it emits a visible `🧭 Directionally · <something>` line in the response text** — not only in reasoning or tool calls. A silent session reads as an absent one; never let a Directionally touchpoint pass with no visible trace. Every 🧭 line begins with `🧭 Directionally · ` followed by a short phrase.
 
-```
-[Directionally receipt]
-Instinct fired: <instinct name>
-Would have: <what agent would have done without it>
-Did instead: <what agent did differently>
-```
+**Standard markers** — use these for each touchpoint:
 
-If no meme fired, no receipt is needed. The receipt is product-visible proof that Directionally shaped the output.
+- **Session start** → `🧭 Directionally · session started`
+- **Poll, nothing fired** → `🧭 Directionally · checked (<phase>) — no instinct fired` (short `<phase>`: `planning`, `before edit`, `unexpected finding`, `wrap-up`)
+- **Instinct fired** → the full receipt block (below) — this *is* the 🧭 line for that poll
+- **Course correction** → `🧭 Directionally · course-corrected — <what changed>`
+- **Wrap-up** → `🧭 Directionally · wrapped — <n> checkpoints, <m> instincts fired`
+- **Trace uploaded** → `🧭 Directionally · trace uploaded`
+- **Activation test** → `🧭 Directionally · activation test — <status>`
+
+For any touchpoint not listed, still emit a `🧭 Directionally · <phrase>` line describing it. When in doubt, mark it.
+
+**Full receipt — when an instinct fires.** When a meme fires (a `consideration` event is returned and shapes the response), that poll's marker is the full receipt:
+
+> 🧭 Directionally Receipt — Instinct fired: ⚡ **<instinct name>**
+>
+> 🧠 Before instinct
+> <what the agent would have done without it>
+>
+> 🔧 After instinct
+> <what the agent did differently>
+>
+> 📌 Why it matters
+> <why the correction mattered — a lesson that changes this run, not just an anecdote>
+
+Every turn ends with at least one 🧭 marker. The markers are product-visible proof that Directionally is engaged and shaping the output.
 
 **`elaborating` triggers** — elaborate early and often, at each of these moments:
 
