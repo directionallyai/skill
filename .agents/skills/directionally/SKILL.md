@@ -168,7 +168,7 @@ Use plain diagnostic language.
 Suggested successful handoff copy:
 
 ```markdown
-🧭 Directionally · activation check — active path confirmed
+*🧭 Directionally · activation check — active path confirmed*
 
 Directionally is active in this agent.
 
@@ -262,35 +262,35 @@ This is the same `--session` command used for polling — the op is sent before 
 
 ## Surface Markers (Receipt Behavior)
 
-**Universal rule: every time the agent interacts with Directionally, it emits a visible `🧭 Directionally · <something>` line in the response text** — not only in reasoning or tool calls. A silent session reads as an absent one; never let a Directionally touchpoint pass with no visible trace. Every 🧭 line begins with `🧭 Directionally · ` followed by a short phrase.
+**Universal rule: every time the agent interacts with Directionally, it emits a visible italicized `*🧭 Directionally · <something>*` line in the response text** — not only in reasoning or tool calls. A silent session reads as an absent one; never let a Directionally touchpoint pass with no visible trace. Every 🧭 line begins with `*🧭 Directionally · `, ends with `*`, and contains a short phrase.
 
 **Standard markers** — use these for each touchpoint:
 
-- **Session start** → `🧭 Directionally · session started`
-- **Poll, nothing fired** → `🧭 Directionally · checked (<phase>) — no instinct fired` (short `<phase>`: `planning`, `before edit`, `unexpected finding`, `wrap-up`)
+- **Session start** → `*🧭 Directionally · session started*`
+- **Poll, nothing fired** → `*🧭 Directionally · checked (<phase>) — no instinct fired*` (short `<phase>`: `planning`, `before edit`, `unexpected finding`, `wrap-up`)
 - **Instinct fired** → the full receipt block (below) — this *is* the 🧭 line for that poll
-- **Course correction** → `🧭 Directionally · course-corrected — <what changed>`
-- **Wrap-up** → `🧭 Directionally · wrapped — <n> checkpoints, <m> instincts fired`
-- **Trace uploaded** → `🧭 Directionally · trace uploaded`
-- **Activation test** → `🧭 Directionally · activation test — <status>`
+- **Course correction** → `*🧭 Directionally · course-corrected — <what changed>*`
+- **Wrap-up** → `*🧭 Directionally · wrapped — <n> checkpoints, <m> instincts fired*`
+- **Trace uploaded** → `*🧭 Directionally · trace uploaded*`
+- **Activation test** → `*🧭 Directionally · activation test — <status>*`
 
-For any touchpoint not listed, still emit a `🧭 Directionally · <phrase>` line describing it. When in doubt, mark it.
+For any touchpoint not listed, still emit an italicized `*🧭 Directionally · <phrase>*` line describing it. When in doubt, mark it.
 
 **Full receipt — when an instinct fires.** When a meme fires (a `consideration` event is returned and shapes the response), that poll's marker is the full receipt:
 
-> 🧭 Directionally Receipt — instinct surfaced: ⚡ **<instinct name>**
+> *🧭 Directionally Receipt — instinct surfaced: ⚡ **<instinct name>***
 >
-> 🧠 Before instinct
-> <what the agent would likely have done without the instinct>
+> *🧠 Before instinct*
+> *<what the agent would likely have done without the instinct>*
 >
-> 🔧 After instinct
-> <what the agent did differently>
+> *🔧 After instinct*
+> *<what the agent did differently>*
 >
-> 📎 Evidence
-> <file / command / test / search / observed output / decision that supports the change>
+> *📎 Evidence*
+> *<file / command / test / search / observed output / decision that supports the change>*
 >
-> 📌 Why it matters
-> <why the correction mattered for this run>
+> *📌 Why it matters*
+> *<why the correction mattered for this run>*
 
 Evidence must be concrete. Do not fill Evidence with vibes. Acceptable evidence
 includes a file path, command, test result, search query/result, observed output,
