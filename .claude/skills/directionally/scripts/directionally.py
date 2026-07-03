@@ -77,6 +77,31 @@ def get_api_base():
     return os.environ.get("DIRECTIONALLY_API_BASE", DEFAULT_API_BASE).rstrip("/")
 
 
+def _endpoint_hostname(api_base):
+    parsed = urllib.parse.urlparse((api_base or DEFAULT_API_BASE).rstrip("/"))
+    return parsed.hostname or "unknown"
+
+
+def credential_path(api_base):
+    if (api_base or DEFAULT_API_BASE).rstrip("/") == DEFAULT_API_BASE:
+        return CREDENTIALS_PATH
+    return os.path.join(
+        os.path.expanduser("~"),
+        ".directionally",
+        f"credentials-{_endpoint_hostname(api_base)}",
+    )
+
+
+def pending_login_path(api_base):
+    if (api_base or DEFAULT_API_BASE).rstrip("/") == DEFAULT_API_BASE:
+        return PENDING_LOGIN_PATH
+    return os.path.join(
+        os.path.expanduser("~"),
+        ".directionally",
+        f"pending_login-{_endpoint_hostname(api_base)}",
+    )
+
+
 def get_web_base(api_base=None):
     override = os.environ.get("DIRECTIONALLY_WEB_BASE", "").strip()
     if override:
@@ -325,9 +350,10 @@ def number_flag(value, fallback, name):
 
 
 
-def load_credential():
+def load_credential(api_base):
+    path = credential_path(api_base)
     try:
-        with open(CREDENTIALS_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
             return data.get("credential")
     except (OSError, json.JSONDecodeError):
@@ -335,36 +361,39 @@ def load_credential():
 
 
 
-def save_credential(credential, username):
-    os.makedirs(os.path.dirname(CREDENTIALS_PATH), exist_ok=True)
-    with open(CREDENTIALS_PATH, "w", encoding="utf-8") as f:
+def save_credential(api_base, credential, username):
+    path = credential_path(api_base)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
         json.dump({"credential": credential, "username": username}, f)
-    os.chmod(CREDENTIALS_PATH, 0o600)
+    os.chmod(path, 0o600)
 
 
-def save_pending_login(token, url):
-    os.makedirs(os.path.dirname(PENDING_LOGIN_PATH), exist_ok=True)
-    with open(PENDING_LOGIN_PATH, "w", encoding="utf-8") as f:
+def save_pending_login(api_base, token, url):
+    path = pending_login_path(api_base)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
         json.dump({"token": token, "url": url}, f)
 
 
-def load_pending_login():
+def load_pending_login(api_base):
+    path = pending_login_path(api_base)
     try:
-        with open(PENDING_LOGIN_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except (OSError, json.JSONDecodeError):
         return None
 
 
-def clear_pending_login():
+def clear_pending_login(api_base):
     try:
-        os.remove(PENDING_LOGIN_PATH)
+        os.remove(pending_login_path(api_base))
     except OSError:
         pass
 
 
 def try_redeem_pending_login(api_base):
-    pending = load_pending_login()
+    pending = load_pending_login(api_base)
     if not pending or not pending.get("token"):
         return
     parsed = urllib.parse.urlparse(api_base)
@@ -378,18 +407,18 @@ def try_redeem_pending_login(api_base):
             conn.close()
             status = result.get("status")
             if status == "granted":
-                save_credential(result["credential"], result.get("username", ""))
-                clear_pending_login()
+                save_credential(api_base, result["credential"], result.get("username", ""))
+                clear_pending_login(api_base)
             elif status == "expired":
-                clear_pending_login()
+                clear_pending_login(api_base)
         else:
             conn.close()
     except Exception:
         pass
 
 
-def auth_headers():
-    cred = load_credential()
+def auth_headers(api_base):
+    cred = load_credential(api_base)
     if cred:
         return {"Authorization": f"Bearer {cred}"}
     return {}
@@ -398,7 +427,7 @@ def auth_headers():
 def _emit_login_needed(api_base):
     """Print a login URL and exit with the auth-failure sentinel that SKILL.md watches for."""
     # Reuse a previously saved pending token if we have one.
-    pending = load_pending_login()
+    pending = load_pending_login(api_base)
     login_url = pending.get("url") if pending else None
 
     if not login_url:
@@ -415,7 +444,7 @@ def _emit_login_needed(api_base):
                 data = json.loads(resp.read())
                 login_url = data.get("url")
                 if login_url:
-                    save_pending_login(data.get("token", ""), login_url)
+                    save_pending_login(api_base, data.get("token", ""), login_url)
             conn.close()
         except Exception:
             pass
@@ -468,9 +497,9 @@ def cmd_login(api_base):
             status = result.get("status")
             if status == "granted":
                 sys.stdout.write("\n")
-                save_credential(result["credential"], result.get("username", ""))
+                save_credential(api_base, result["credential"], result.get("username", ""))
                 sys.stdout.write(f"Logged in as {result.get('username', 'unknown')}.\n")
-                sys.stdout.write(f"Credential saved to {CREDENTIALS_PATH}\n")
+                sys.stdout.write(f"Credential saved to {credential_path(api_base)}\n")
                 return
             if status == "expired":
                 raise RuntimeError("Login expired. Run --login again.")
@@ -542,7 +571,7 @@ def exchange_install_token(api_base, token):
     if not credential:
         raise RuntimeError("Install token exchange returned no credential.")
     username = data.get("username", "")
-    save_credential(credential, username)
+    save_credential(api_base, credential, username)
     return username
 
 
@@ -555,7 +584,7 @@ def fetch_active_pack_names(api_base):
             15,
             "GET",
             f"{parsed.path}/api/user/plan",
-            headers={"User-Agent": user_agent(), **auth_headers()},
+            headers={"User-Agent": user_agent(), **auth_headers(api_base)},
         )
         status = resp.status
         body = resp.read()
@@ -658,7 +687,7 @@ def submit_trace(api_base, agent, trace_bytes):
                 "Content-Type": "application/x-ndjson",
                 "User-Agent": user_agent(),
                 "Content-Length": str(len(trace_bytes)),
-                **auth_headers(),
+                **auth_headers(api_base),
             },
         )
         status = resp.status
@@ -804,7 +833,7 @@ def open_first_session(api_base, initial_message):
             "Accept": "application/x-ndjson",
             "User-Agent": user_agent(),
             "Content-Length": str(len(body)),
-            **auth_headers(),
+            **auth_headers(api_base),
         },
     )
 
@@ -875,7 +904,7 @@ def send_ops(session_id, api_base, ops):
                 "Content-Type": "application/x-ndjson",
                 "User-Agent": user_agent(),
                 "Content-Length": str(len(body)),
-                **auth_headers(),
+                **auth_headers(api_base),
             },
         )
         if resp.status < 200 or resp.status >= 300:
@@ -917,7 +946,7 @@ def poll_session(api_base, flags):
     )
     req = urllib.request.Request(
         url,
-        headers={"Accept": "application/x-ndjson", "User-Agent": user_agent(), **auth_headers()},
+        headers={"Accept": "application/x-ndjson", "User-Agent": user_agent(), **auth_headers(api_base)},
     )
     try:
         with urlopen_with_tls(req, timeout=wait + 10) as resp:
