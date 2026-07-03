@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 VERSION = "0.2.10"
 # sha256 of the SKILL.md that ships alongside this script. Regenerate with:
 #   shasum -a 256 .agents/skills/directionally/SKILL.md
-SKILL_SHA256 = "7bd7bf3711b83437e3f415180341c636162a8df51211eb34a13a198318b8cada"
+SKILL_SHA256 = "ff80bfa4f98d1f6cc28c9f46833cd7c14a86f9e3202d99fcc1059ae6f5c24fba"
 DEFAULT_API_BASE = "https://api.directionally.ai"
 DEFAULT_WEB_BASE = "https://directionally.ai"
 CREDENTIALS_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "credentials")

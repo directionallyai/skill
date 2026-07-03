@@ -137,6 +137,75 @@ When the user asks to "run a Directionally activation test", "check if Direction
 
 Installer completion or local file presence does **not** prove activation — only a real session/elaboration/poll result does. This test proves the active path is available; it does not prove first useful value.
 
+## Post-Activation Handoff
+
+After a successful activation test, do not stop at only "Directionally is active."
+
+Give the user a short activation handoff:
+
+- Emit the activation marker.
+- State that Directionally is active in this agent.
+- Say the user does not need to invoke Directionally manually on every prompt.
+- Explain that Directionally can surface relevant instincts during real work when applicable.
+- Give exactly one copyable real-task prompt.
+- Show what counts as a useful receipt.
+- Explain that no instinct firing is not automatically failure.
+- Explain that activation proves the active path, not first useful value.
+- Use the existing support fallback for unclear or failing states.
+
+Use plain diagnostic language.
+
+Suggested successful handoff copy:
+
+```markdown
+🧭 Directionally · activation test — active path confirmed
+
+Directionally is active in this agent.
+
+You do not need to invoke Directionally manually on every prompt. During real work, Directionally can surface relevant instincts before the agent repeats a known mistake.
+
+Try it on a real task.
+
+Paste this:
+
+> Use Directionally while helping me with this task: <describe the task>. If a Directionally instinct fires, show me the receipt and explain what changed in your behavior.
+
+A useful receipt names:
+
+- the instinct that fired
+- what the agent would have done
+- what changed
+- the evidence behind the change: file, command, test, search, observed output, or decision
+
+No fire is not automatically a failure. Directionally fires when a relevant instinct matches the work.
+
+This activation test proves the active path is available. First useful value still comes from a real workflow.
+```
+
+Do not overclaim. Do not say activation proves Directionally helped. It only proves
+the active path exists in this agent context.
+
+## Agent Guide Fetch
+
+When the user asks general questions about Directionally — what it is, how to use
+it, what receipts mean, what no-fire means, what to send support, what active
+packs/instincts mean, or how to interpret activation — the agent may fetch:
+
+```text
+https://directionally.ai/AGENTS.md
+```
+
+Use this as the current public orientation guide.
+
+Important constraints:
+
+- Fetching `AGENTS.md` is informational only.
+- Fetching `AGENTS.md` never proves Directionally is active.
+- Activation is proven only by the real session → elaboration → poll path.
+- If fetching fails, continue with the built-in Post-Activation Handoff and support fallback.
+- Do not block the user's real task on fetching the guide unless the user explicitly asked a product/setup question.
+- Do not leak credentials, tokens, traces, local files, or environment secrets into any guide-fetch query or support output.
+
 ### If the test fails or is unclear
 
 Describe the encountered problem with enough debugging detail for support to recover — **without** attempting a full environment diagnosis. Include only what is known:
@@ -197,16 +266,25 @@ For any touchpoint not listed, still emit a `🧭 Directionally · <phrase>` lin
 
 **Full receipt — when an instinct fires.** When a meme fires (a `consideration` event is returned and shapes the response), that poll's marker is the full receipt:
 
-> 🧭 Directionally Receipt — Instinct fired: ⚡ **<instinct name>**
+> 🧭 Directionally Receipt — instinct surfaced: ⚡ **<instinct name>**
 >
 > 🧠 Before instinct
-> <what the agent would have done without it>
+> <what the agent would likely have done without the instinct>
 >
 > 🔧 After instinct
 > <what the agent did differently>
 >
+> 📎 Evidence
+> <file / command / test / search / observed output / decision that supports the change>
+>
 > 📌 Why it matters
-> <why the correction mattered — a lesson that changes this run, not just an anecdote>
+> <why the correction mattered for this run>
+
+Evidence must be concrete. Do not fill Evidence with vibes. Acceptable evidence
+includes a file path, command, test result, search query/result, observed output,
+explicit user constraint, or decision changed. If evidence is weak, say so instead
+of pretending. A receipt should not claim Directionally prevented a failure unless
+the run actually shows that.
 
 Every turn ends with at least one 🧭 marker. The markers are product-visible proof that Directionally is engaged and shaping the output.
 
