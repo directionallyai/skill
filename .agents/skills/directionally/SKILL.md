@@ -127,7 +127,7 @@ When the user asks to "run a Directionally activation test", "check if Direction
 
    > Activation test: user wants to verify Directionally is loaded in this agent and can return considerations in the real agent context.
 
-2. **Inspect the result** and report one plain status to the user:
+2. **Inspect the result** and choose one plain status:
    - **Directionally is active in this agent.** — the poll returned the normal Directionally stream (`bridge_started` / `polled`, plus a `consideration` if a meme fired).
    - **Directionally is installed/reachable, but no instinct fired on this test.** — the round-trip succeeded but returned no `consideration`.
    - **Directionally needs login or token setup.** — stderr contained `Need to log in to Directionally` (see [Authentication Failure](#authentication-failure)).
@@ -135,13 +135,23 @@ When the user asks to "run a Directionally activation test", "check if Direction
    - **Directionally may not be loaded by this agent app or this chat/session.** — the script itself could not be invoked.
    - **Unclear; email support@directionally.ai with the activation-test output.**
 
+3. **If the status is active or installed/reachable, give the Required Post-Activation Handoff in the same response.**
+
 Installer completion or local file presence does **not** prove activation — only a real session/elaboration/poll result does. This test proves the active path is available; it does not prove first useful value.
 
-## Post-Activation Handoff
+Activation test definition of done:
 
-After a successful activation check, do not stop at only "Directionally is active."
+- Real session/elaboration/poll completed, or a specific failure status was reported.
+- If the active path completed, the user received the Required Post-Activation Handoff below.
+- The answer did not stop at installer output, active pack names, `bridge_started`, `polled`, or "Directionally is active."
 
-Give the user a short activation handoff:
+Common miss to avoid: a technical smoke-test receipt is not enough. If you only report the session id, poll count, active packs, or dashboard link, the activation flow is incomplete. The user still needs the "now what" handoff.
+
+## Required Post-Activation Handoff
+
+After a successful activation check, do not stop at only "Directionally is active." The activation test is incomplete until the user gets this handoff.
+
+Give the user a short activation handoff in the same final response:
 
 - Emit the activation marker.
 - State that Directionally is active in this agent.
