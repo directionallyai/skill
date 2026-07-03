@@ -139,18 +139,18 @@ Installer completion or local file presence does **not** prove activation — on
 
 ## Post-Activation Handoff
 
-After a successful activation test, do not stop at only "Directionally is active."
+After a successful activation check, do not stop at only "Directionally is active."
 
 Give the user a short activation handoff:
 
 - Emit the activation marker.
 - State that Directionally is active in this agent.
-- Say the user does not need to invoke Directionally manually on every prompt.
-- Explain that Directionally can surface relevant instincts during real work when applicable.
+- Say the user does not need to ask for Directionally on every prompt.
+- Explain that the user should keep working normally and Directionally can surface relevant instincts when applicable.
 - Give exactly one copyable real-task prompt.
 - Show what counts as a useful receipt.
-- Explain that no instinct firing is not automatically failure.
-- Explain that activation proves the active path, not first useful value.
+- Explain that nothing surfacing is not automatically failure.
+- Explain that the activation check proves the active path, not first useful value.
 - Use the existing support fallback for unclear or failing states.
 
 Use plain diagnostic language.
@@ -158,28 +158,30 @@ Use plain diagnostic language.
 Suggested successful handoff copy:
 
 ```markdown
-🧭 Directionally · activation test — active path confirmed
+🧭 Directionally · activation check — active path confirmed
 
 Directionally is active in this agent.
 
-You do not need to invoke Directionally manually on every prompt. During real work, Directionally can surface relevant instincts before the agent repeats a known mistake.
+I verified that Directionally can start a session, send an update, and receive a response. That means it is loaded in this agent, not just installed on disk.
 
-Try it on a real task.
+You do not need to ask for Directionally on every prompt. Keep working normally. When a relevant pattern appears, Directionally may surface guidance before I take the next action.
+
+Try it on a real task:
 
 Paste this:
 
-> Use Directionally while helping me with this task: <describe the task>. If a Directionally instinct fires, show me the receipt and explain what changed in your behavior.
+> Help me with this task: <describe the task>. If Directionally surfaces guidance, show me what changed in your next step.
 
 A useful receipt names:
 
-- the instinct that fired
+- the guidance that appeared
 - what the agent would have done
 - what changed
 - the evidence behind the change: file, command, test, search, observed output, or decision
 
-No fire is not automatically a failure. Directionally fires when a relevant instinct matches the work.
+Nothing surfacing is not automatically a failure. Directionally surfaces guidance when a relevant pattern matches the work.
 
-This activation test proves the active path is available. First useful value still comes from a real workflow.
+This activation check proves the active path is available. First useful value still comes from a real workflow.
 ```
 
 Do not overclaim. Do not say activation proves Directionally helped. It only proves
