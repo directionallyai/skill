@@ -17,11 +17,12 @@ from datetime import datetime, timezone
 VERSION = "0.2.10"
 # sha256 of the SKILL.md that ships alongside this script. Regenerate with:
 #   shasum -a 256 .agents/skills/directionally/SKILL.md
-SKILL_SHA256 = "1877859a5fe94655abad7041639db0fbd143cd02cf76d2c2a28a86921569ba9f"
+SKILL_SHA256 = "7d7a3633dcb08dd2d28ca89d2b2be4ec97cf03887eb274441d9d8474e5d54e49"
 DEFAULT_API_BASE = "https://api.directionally.ai"
 DEFAULT_WEB_BASE = "https://directionally.ai"
 CREDENTIALS_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "credentials")
 PENDING_LOGIN_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "pending_login")
+AGENT_RUNTIME_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "agent")
 SKILL_RELATIVE = os.path.join(".agents", "skills", "directionally", "SKILL.md")
 SKILL_CLAUDE_RELATIVE = os.path.join(".claude", "skills", "directionally", "SKILL.md")
 DEFAULT_SKILL_URL = (
@@ -455,7 +456,9 @@ def _emit_login_needed(api_base):
             "Then re-run your command.\n"
         )
     else:
-        sys.stderr.write("Need to log in to Directionally. Run: directionally.py --login\n")
+        sys.stderr.write(
+            "Need to log in to Directionally. Run: ~/.directionally/agent --login\n"
+        )
     sys.exit(1)
 
 
@@ -523,6 +526,12 @@ def write_if_changed(file_path, content):
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(content)
     return {"path": file_path, "action": "updated" if existed else "created"}
+
+
+def render_skill_template(skill_body):
+    """Render local install values into the verified SKILL.md template."""
+    agent_path = os.path.realpath(AGENT_RUNTIME_PATH)
+    return skill_body.replace("~/.directionally/agent", agent_path)
 
 
 def download_url(url):
@@ -752,7 +761,7 @@ def cmd_setup(flags):
             f"Authenticated as {username}.\n" if username else "Authenticated.\n"
         )
 
-    # Expected sha256 of the directionally.py we are about to download, baked into
+    # Expected sha256 of the agent runtime we are about to download, baked into
     # the install command by the trusted backend. Optional, but when present every
     # downloaded script is verified against it before being installed.
     script_hash = flags.get("script_hash")
@@ -761,8 +770,15 @@ def cmd_setup(flags):
 
     skill_url = os.environ.get("DIRECTIONALLY_SKILL_URL", DEFAULT_SKILL_URL)
     skill_body = download_skill(skill_url)
-    # The downloaded SKILL.md must match what this script expects (hardcoded).
+    # The downloaded SKILL.md template must match what this script expects (hardcoded).
+    # Install-specific values are rendered only after this verification step.
     verify_download("SKILL.md", skill_body.encode("utf-8"), SKILL_SHA256)
+    rendered_skill_body = render_skill_template(skill_body)
+
+    script_url = os.environ.get("DIRECTIONALLY_SCRIPT_URL", DEFAULT_SCRIPT_URL)
+    script_body = download_url(script_url)
+    if script_hash:
+        verify_download("directionally.py", script_body, script_hash)
 
     global_dir = _global_skills_dir(agent_type) if agent_type else None
     if agent_type and not global_dir:
@@ -772,17 +788,12 @@ def cmd_setup(flags):
 
     if global_dir:
         skill_dest = os.path.join(global_dir, "directionally", "SKILL.md")
-        script_dest = os.path.join(global_dir, "directionally", "scripts", "directionally.py")
+        script_dest = AGENT_RUNTIME_PATH
 
-        script_url = os.environ.get("DIRECTIONALLY_SCRIPT_URL", DEFAULT_SCRIPT_URL)
-        script_body = download_url(script_url)
-        if script_hash:
-            verify_download("directionally.py", script_body, script_hash)
-
-        files.append({**write_if_changed(skill_dest, skill_body), "abs": skill_dest})
+        files.append({**write_if_changed(skill_dest, rendered_skill_body), "abs": skill_dest})
         files.append({**write_if_changed(script_dest, script_body.decode("utf-8")), "abs": script_dest})
-        # Make the script directly executable so SKILL.md can invoke it via its
-        # shebang (scripts/directionally.py …) without a python3 prefix.
+        # Make the stable runtime directly executable so SKILL.md can invoke it
+        # without exposing variable payloads in the command prefix.
         try:
             os.chmod(script_dest, 0o755)
         except OSError:
@@ -800,9 +811,14 @@ def cmd_setup(flags):
         target_root = os.path.realpath(cwd)
 
         files = [
-            {**write_if_changed(os.path.join(target_root, SKILL_RELATIVE), skill_body), "rel": SKILL_RELATIVE},
-            {**write_if_changed(os.path.join(target_root, SKILL_CLAUDE_RELATIVE), skill_body), "rel": SKILL_CLAUDE_RELATIVE},
+            {**write_if_changed(os.path.join(target_root, SKILL_RELATIVE), rendered_skill_body), "rel": SKILL_RELATIVE},
+            {**write_if_changed(os.path.join(target_root, SKILL_CLAUDE_RELATIVE), rendered_skill_body), "rel": SKILL_CLAUDE_RELATIVE},
+            {**write_if_changed(AGENT_RUNTIME_PATH, script_body.decode("utf-8")), "rel": AGENT_RUNTIME_PATH},
         ]
+        try:
+            os.chmod(AGENT_RUNTIME_PATH, 0o755)
+        except OSError:
+            pass
 
         lines = [f"Root: {target_root}", ""]
         for f in files:
@@ -965,17 +981,18 @@ def poll_session(api_base, flags):
 
 
 def usage(code=0):
+    prog = "~/.directionally/agent"
     msg = "\n".join([
         "Usage:",
-        "  directionally.py --login",
-        "  directionally.py --setup <agent-type> [--token <tok>] [--script-hash <sha256>]  # global install (claude-code, codex, cursor, opencode, …)",
-        "  directionally.py --setup [--cwd <path>] # project install (no agent type)",
-        "  directionally.py upload  # gist the current session trace (needs CLAUDE_CODE_SESSION_ID/CODEX_THREAD_ID)",
-        "  directionally.py --first --subsession-id <id> <text>",
-        "  directionally.py --session <session_id> [--after <seq>] [--wait <secs>] [--limit <n>]",
+        f"  {prog} --login",
+        f"  {prog} --setup <agent-type> [--token <tok>] [--script-hash <sha256>]  # global install (claude-code, codex, cursor, opencode, ...)",
+        f"  {prog} --setup [--cwd <path>] # project install (no agent type)",
+        f"  {prog} upload  # gist the current session trace (needs CLAUDE_CODE_SESSION_ID/CODEX_THREAD_ID)",
+        f"  {prog} --first --subsession-id <id> <text>",
+        f"  {prog} --session <session_id> [--after <seq>] [--wait <secs>] [--limit <n>]",
         "",
-        "  --setup verifies the downloaded SKILL.md against the hardcoded SKILL_SHA256,",
-        "  and (when --script-hash is given) the downloaded directionally.py against it.",
+        "  --setup verifies the downloaded SKILL.md template against the hardcoded SKILL_SHA256,",
+        "  and (when --script-hash is given) the downloaded agent runtime against it.",
         "",
         "Env:",
         f"  DIRECTIONALLY_API_BASE   Override API base URL (default: {DEFAULT_API_BASE})",

@@ -5,24 +5,27 @@ description: >-
   elaborations as you work, poll session events before consequential actions,
   and close out with report/outcome/follow-up events.
 user-invocable: true
-allowed-tools: Bash(env:*), Bash(scripts/directionally.py:*), Bash(python3:*)
-compatibility: Requires python3, read/write access to ~/.directionally/, and access to the internet
+allowed-tools: Bash(~/.directionally/agent:*)
+compatibility: Requires an installed Directionally runtime at ~/.directionally/agent, read/write access to ~/.directionally/, and access to the internet
 ---
 
 # Directionally
 
-Use Directionally on every request. The CLI owns backend session creation and
-event polling; agents never invent `session_id` values.
+Use Directionally on every request. The installed runtime owns backend session
+creation and event polling; agents never invent `session_id` values.
 
-## Available scripts
+## Runtime
 
-- **`scripts/directionally.py`** — Directionally session client (Python 3, stdlib only)
+- **`~/.directionally/agent`** — Directionally agent runtime
 
-Script paths in code blocks: skill directory root (`~/.claude/skills/directionally/`).
+The installer preselects the target agent and installs the runtime at this stable
+path. Prefer invoking this exact command path so agent permission prompts can be
+granted on a stable prefix instead of on command lines containing session ids,
+install tokens, or user text.
 
 ## Authentication Failure
 
-If any `directionally.py` command exits non-zero and stderr contains
+If any `~/.directionally/agent` command exits non-zero and stderr contains
 `Need to log in to Directionally`, **stop immediately**. Surface the login URL
 to the user and do not proceed with the task. Do not retry.
 
@@ -53,7 +56,7 @@ Run the upload **only** when the user says yes, or when they explicitly ask to s
 the session ("share this trace", "report this session", "send the transcript"):
 
 ```bash
-scripts/directionally.py upload
+~/.directionally/agent upload
 ```
 
 This uploads the **entire session transcript** to the Directionally backend (over the
@@ -68,7 +71,7 @@ the user's mood — it fires only on an explicit yes. The command reads
 If this agent run has no remembered `session_id`, create a new session:
 
 ```bash
-scripts/directionally.py --first --subsession-id <local_run_id> "<initial read of the task>"
+~/.directionally/agent --first --subsession-id <local_run_id> "<initial read of the task>"
 ```
 
 The elaboration text is a positional argument — no `--elaboration` flag.
@@ -103,7 +106,7 @@ Elaborate and poll at every natural pause in reasoning — not only before conse
 > Mess is point. Directionally match against raw thinking, not polished summary. Clean up destroys signal.
 
 ```bash
-scripts/directionally.py --session <session_id> --after <last_sequence> '<json_op>'
+~/.directionally/agent --session <session_id> --after <last_sequence> '<json_op>'
 ```
 
 Pass a JSON op as a positional argument to send it before polling. There is no `--send` flag.
@@ -255,7 +258,7 @@ current run:
 Emit any op by passing it as the positional argument to `--session`:
 
 ```bash
-scripts/directionally.py --session <session_id> --after <last_sequence> '{"op":"follow_up","subsession_id":"run_001","meme_fired":null,"receipt_type":"irrelevant","would_have":"...","did_instead":"...","confidence":"high","open_question":null}'
+~/.directionally/agent --session <session_id> --after <last_sequence> '{"op":"follow_up","subsession_id":"run_001","meme_fired":null,"receipt_type":"irrelevant","would_have":"...","did_instead":"...","confidence":"high","open_question":null}'
 ```
 
 This is the same `--session` command used for polling — the op is sent before the poll fires. All ops use this form: `elaborating` mid-run, and `report`/`outcome`/`follow_up` at the end.
