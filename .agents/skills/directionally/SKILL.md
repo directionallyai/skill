@@ -5,7 +5,7 @@ description: >-
   elaborations as you work, poll session events before consequential actions,
   and close out with report/outcome/follow-up events.
 user-invocable: true
-allowed-tools: Bash(~/.directionally/agent:*)
+allowed-tools: Bash(~/.directionally/agent:*), Bash(~/.directionally/agent *)
 compatibility: Requires an installed Directionally runtime at ~/.directionally/agent, read/write access to ~/.directionally/, and access to the internet
 ---
 
