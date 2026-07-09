@@ -23,6 +23,33 @@ path. Prefer invoking this exact command path so agent permission prompts can be
 granted on a stable prefix instead of on command lines containing session ids,
 install tokens, or user text.
 
+## Permission Requests
+
+When a `~/.directionally/agent` command needs escalated approval, request
+approval for the stable runtime prefix only.
+
+Use this `prefix_rule`:
+
+```json
+["~/.directionally/agent"]
+```
+
+Do not request approval for command-specific arguments such as `--session`,
+`--after`, session ids, JSON ops, user text, upload arguments, or login URLs.
+
+The full command may include arguments, but the reusable approval prefix must
+remain only the stable runtime path. This lets one approval cover:
+
+```bash
+~/.directionally/agent --first ...
+~/.directionally/agent --session ...
+~/.directionally/agent upload
+```
+
+During install, the runtime path in this skill is rendered to the absolute local
+path. Use that rendered absolute path as the `prefix_rule` when requesting
+approval in an installed agent.
+
 ## Authentication Failure
 
 If any `~/.directionally/agent` command exits non-zero and stderr contains
