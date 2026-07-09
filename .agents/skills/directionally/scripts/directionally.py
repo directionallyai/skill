@@ -6,6 +6,7 @@ import http.client
 import json
 import os
 import random
+import re
 import ssl
 import sys
 import time
@@ -33,6 +34,10 @@ DEFAULT_SCRIPT_URL = (
     "https://raw.githubusercontent.com/directionallyai/skill/refs/heads/main"
     "/.agents/skills/directionally/scripts/directionally.py"
 )
+# The published security declaration. Under sole-pin trust (DIR-285) the install
+# command pins only this document's sha256; every artifact hash is then derived
+# from the declaration itself rather than passed on the command line.
+DEFAULT_DECL_URL = "https://directionally.ai/security-declaration.md"
 CERTIFI_WHEEL_NAME = "certifi-2026.6.17-py3-none-any.whl"
 CERTIFI_WHEEL_URL = (
     "https://files.pythonhosted.org/packages/ef/2f/"
@@ -72,6 +77,26 @@ def verify_download(label, data, expected):
     if actual != expected:
         fail(f"integrity: {label} hash mismatch (expected {expected}, got {actual}). "
              "Refusing to install a tampered download.")
+
+
+def parse_declaration_hashes(text):
+    """Pull the pinned artifact sha256s out of the plain-English declaration.
+
+    The declaration is prose, not a data format, so we look for a 64-hex token on
+    the same line as each artifact name (the "What you are installing" section lists
+    `install.py — sha256 <hex>` and `SKILL.md — sha256 <hex>`). The runtime is
+    declared byte-identical to install.py, so it reuses that hash. update-install.sh
+    asserts these stay in sync with the real artifacts, so the format can't drift
+    silently."""
+    hashes = {}
+    for name in ("install.py", "SKILL.md"):
+        for line in text.splitlines():
+            if name in line:
+                m = re.search(r"\b([0-9a-f]{64})\b", line)
+                if m:
+                    hashes[name] = m.group(1)
+                    break
+    return hashes
 
 
 def get_api_base():
@@ -768,17 +793,35 @@ def cmd_setup(flags):
     if script_hash is True or script_hash == "":
         script_hash = None
 
+    # Sole-pin trust root (DIR-285): the install command pins only the declaration's
+    # sha256. Re-fetch and re-verify it here (independently of the bootstrap that
+    # exec'd us), then derive the artifact hashes from it. Declared hashes take
+    # precedence over the command-line --script-hash and the hardcoded SKILL_SHA256.
+    decl_hash = flags.get("decl_hash")
+    if decl_hash is True or decl_hash == "":
+        decl_hash = None
+    declared = {}
+    if decl_hash:
+        decl_url = os.environ.get("DIRECTIONALLY_DECL_URL", DEFAULT_DECL_URL)
+        decl_bytes = download_url(decl_url)
+        verify_download("security-declaration.md", decl_bytes, decl_hash)
+        declared = parse_declaration_hashes(decl_bytes.decode("utf-8"))
+
     skill_url = os.environ.get("DIRECTIONALLY_SKILL_URL", DEFAULT_SKILL_URL)
     skill_body = download_skill(skill_url)
-    # The downloaded SKILL.md template must match what this script expects (hardcoded).
+    # The downloaded SKILL.md template must match the pinned hash — from the declaration
+    # when sole-pinned, otherwise the hardcoded fallback baked into this script.
     # Install-specific values are rendered only after this verification step.
-    verify_download("SKILL.md", skill_body.encode("utf-8"), SKILL_SHA256)
+    verify_download("SKILL.md", skill_body.encode("utf-8"), declared.get("SKILL.md", SKILL_SHA256))
     rendered_skill_body = render_skill_template(skill_body)
 
     script_url = os.environ.get("DIRECTIONALLY_SCRIPT_URL", DEFAULT_SCRIPT_URL)
     script_body = download_url(script_url)
-    if script_hash:
-        verify_download("directionally.py", script_body, script_hash)
+    # The runtime is declared byte-identical to install.py, so its pin is the
+    # install.py hash from the declaration; --script-hash still works standalone.
+    effective_script_hash = script_hash or declared.get("install.py")
+    if effective_script_hash:
+        verify_download("directionally.py", script_body, effective_script_hash)
 
     global_dir = _global_skills_dir(agent_type) if agent_type else None
     if agent_type and not global_dir:
@@ -985,18 +1028,21 @@ def usage(code=0):
     msg = "\n".join([
         "Usage:",
         f"  {prog} --login",
-        f"  {prog} --setup <agent-type> [--token <tok>] [--script-hash <sha256>]  # global install (claude-code, codex, cursor, opencode, ...)",
+        f"  {prog} --setup <agent-type> [--token <tok>] [--decl-hash <sha256>] [--script-hash <sha256>]  # global install (claude-code, codex, cursor, opencode, ...)",
         f"  {prog} --setup [--cwd <path>] # project install (no agent type)",
         f"  {prog} upload  # gist the current session trace (needs CLAUDE_CODE_SESSION_ID/CODEX_THREAD_ID)",
         f"  {prog} --first --subsession-id <id> <text>",
         f"  {prog} --session <session_id> [--after <seq>] [--wait <secs>] [--limit <n>]",
         "",
-        "  --setup verifies the downloaded SKILL.md template against the hardcoded SKILL_SHA256,",
-        "  and (when --script-hash is given) the downloaded agent runtime against it.",
+        "  --setup verifies the downloaded SKILL.md and agent runtime before installing them.",
+        "  With --decl-hash it re-fetches the security declaration, verifies it against that",
+        "  sha256, and derives the SKILL.md and runtime hashes from it (sole-pin, DIR-285).",
+        "  --script-hash still pins the runtime directly when used without a declaration.",
         "",
         "Env:",
         f"  DIRECTIONALLY_API_BASE   Override API base URL (default: {DEFAULT_API_BASE})",
         "  DIRECTIONALLY_SKILL_URL  Override SKILL.md source URL used by --setup",
+        f"  DIRECTIONALLY_DECL_URL   Override security-declaration.md URL (default: {DEFAULT_DECL_URL})",
     ])
     (sys.stdout if code == 0 else sys.stderr).write(msg + "\n")
     sys.exit(code)
