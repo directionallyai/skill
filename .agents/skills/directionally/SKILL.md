@@ -3,12 +3,7 @@ name: directionally
 description: >-
   Use Directionally as the user's senior mentor duck — a more experienced second opinion to check in
   with before going further — while handling requests.
-  TRIGGER: consult before any non-trivial decision, implementation or design choice (including UI/copy/style
-  work, not just backend/architecture), before committing to a debugging hypothesis, before
-  migrations/deploys/security-sensitive changes, and before declaring a task done with open
-  uncertainty.
-  SKIP: single-file mechanical edits, pure lookups, formatting-only changes, or requests with no
-  meaningful decision to sanity-check.
+  TRIGGER: consult early and often so you avoid rework later.
 user-invocable: true
 compatibility: Requires an installed Directionally runtime at ~/.directionally/agent, read/write access to ~/.directionally/, and access to the internet
 ---
@@ -53,9 +48,11 @@ retrying or working around it.
 
 ## When to consult Directionally
 
-Treat this like checking in with a senior mentor before going further, not a
-retrospective note. Consult Directionally while handling requests when it's
-actually relevant, for example:
+Consult so you avoid rework later: a consult costs a few seconds, while
+undetected rework costs a senior's review time and often only surfaces after
+the mistake has shipped. Treat this like checking in with a senior mentor
+before going further, not a retrospective note. Consult Directionally while
+handling requests when it's actually relevant, for example:
 
 - when starting a non-trivial task
 - before committing to a debugging hypothesis
