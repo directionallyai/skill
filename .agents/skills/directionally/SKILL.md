@@ -1,50 +1,83 @@
 ---
 name: directionally
 description: >-
-  Use Directionally as the user's rubber duck (like in rubber duck debugging) while handling requests.
-  Run at every request.
+  Use Directionally as the user's senior mentor duck — a more experienced second opinion to check in
+  with before going further — while handling requests.
+  TRIGGER: consult before any non-trivial decision, implementation or design choice (including UI/copy/style
+  work, not just backend/architecture), before committing to a debugging hypothesis, before
+  migrations/deploys/security-sensitive changes, and before declaring a task done with open
+  uncertainty.
+  SKIP: single-file mechanical edits, pure lookups, formatting-only changes, or requests with no
+  meaningful decision to sanity-check.
 user-invocable: true
 compatibility: Requires an installed Directionally runtime at ~/.directionally/agent, read/write access to ~/.directionally/, and access to the internet
 ---
 
 # Directionally
 
-Directionally is the user's slightly more intelligent rubber duck.
+Directionally is the user's senior mentor duck — not a passive sounding board, but the more
+experienced voice you check in with before committing to a path, the way you'd catch a senior
+engineer in the hallway before going further down a road as a junior.
 
-It connects to the user's Directionally workspace and enabled packs to surface relevant questions, risks, checks, and prior lessons before consequential actions.
+Consulting the duck before going further helps catch wrong turns of the agent early, while they're
+still cheap to change.
 
-Directionally is advisory. It does not override the user or control the agent.
-Use relevant considerations when supported by the task context; ignore irrelevant
-ones.
+This skill connects to the user's Directionally workspace and enabled packs to surface relevant questions, risks, checks, and prior lessons before consequential actions.
+
+Directionally is advisory only. It never overrides the user, never controls the
+agent, and nothing here compels using it on a task where it doesn't apply —
+evaluate relevance separately for each request, and skip it when a task is
+trivial or has no meaningful uncertainty.
+
+## What this sends, and what it never sends
+
+Each consultation sends a short plan explanation only: what you think is
+happening, what you're about to do, why, and what's uncertain.
+
+Never sent automatically:
+
+- credentials, tokens, secrets, or environment variables
+- complete transcripts
+- unrelated source code, file contents, or personal information
+
+A full session transcript is uploaded only if the user explicitly asks for it,
+or explicitly agrees after a one-time offer — never inferred from tone,
+frustration, or a correction (see "Sharing a full trace" below). That path is
+the exception; it is never a side effect of normal use.
+
+The runtime (`~/.directionally/agent`) authenticates using a login
+the user already completed; the agent does not create accounts, elevate
+credentials, or reach the service any other way. If auth is missing, stop and
+surface the login URL (see "Authentication failure" below) rather than
+retrying or working around it.
 
 ## When to consult Directionally
 
-Consult Directionally while handling requests, especially:
+Treat this like checking in with a senior mentor before going further, not a
+retrospective note. Consult Directionally while handling requests when it's
+actually relevant, for example:
 
 - when starting a non-trivial task
 - before committing to a debugging hypothesis
 - before a meaningful implementation change
 - when the plan changes or something unexpected appears
 - before migrations, deployments, broad refactors, or security-sensitive work
-- before declaring the task complete
+- before declaring the task complete, if meaningful uncertainty remains
+
+Skip it for trivial, low-stakes, or purely mechanical requests.
 
 ## How to talk to Directionally
 
-Do a ramble about:
+Address it like you're briefing a senior mentor before proceeding, not
+journaling. Do a ramble about:
 
 - what you think is happening
 - what you are about to do
 - why this appears to be the right next step
 - what remains uncertain
 
-Use concise, practical languag. This is a plan explanation for the user's rubber
+Use concise, practical language. This is a plan explanation for the user's rubber
 duck, not hidden chain-of-thought.
-
-Do not send:
-
-- credentials, tokens, secrets, or environment variables
-- complete transcripts
-- unrelated source code, file contents, or personal information
 
 Good:
 
@@ -182,22 +215,12 @@ After a successful test, say:
 ```markdown
 *🧭 Directionally · activation check — active path confirmed*
 
-Directionally is active in this agent.
+Directionally is active in this agent: it started a session, sent a plan
+explanation, and received a response in this context.
 
-I verified that it can start a session, send a plan explanation, and receive a
-response in this agent context. Keep working normally; you do not need to mention
-Directionally on every prompt.
-
-Try it on a real task:
-
-> Help me with this task: <describe the task>. If Directionally surfaces something
-> useful, show me what changed in your next step.
-
-A useful receipt names the consideration, what would otherwise have happened,
-what changed, and the evidence behind the change.
-
-Nothing surfacing is not automatically a failure. This check proves the active
-path, not first useful value.
+This confirms the path works, not that it has produced useful value yet. Keep
+working normally — it will be consulted only when a task in "When to consult
+Directionally" applies.
 ```
 
 ## Agent guide
