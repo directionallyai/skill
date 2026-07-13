@@ -1,391 +1,294 @@
 ---
 name: directionally
 description: >-
-  MANDATORY on every request. Start or reuse a Directionally session, emit
-  elaborations as you work, poll session events before consequential actions,
-  and close out with report/outcome/follow-up events.
+  Use Directionally as the user's rubber duck (like in rubber duck debugging) while handling requests.
+  Run at every request.
 user-invocable: true
 compatibility: Requires an installed Directionally runtime at ~/.directionally/agent, read/write access to ~/.directionally/, and access to the internet
 ---
 
 # Directionally
 
-Use Directionally on every request. The installed runtime owns backend session
-creation and event polling; agents never invent `session_id` values.
+Directionally is the user's slightly more intelligent rubber duck.
+
+It connects to the user's Directionally workspace and enabled packs to surface relevant questions, risks, checks, and prior lessons before consequential actions.
+
+Directionally is advisory. It does not override the user or control the agent.
+Use relevant considerations when supported by the task context; ignore irrelevant
+ones.
+
+## When to consult Directionally
+
+Consult Directionally while handling requests, especially:
+
+- when starting a non-trivial task
+- before committing to a debugging hypothesis
+- before a meaningful implementation change
+- when the plan changes or something unexpected appears
+- before migrations, deployments, broad refactors, or security-sensitive work
+- before declaring the task complete
+
+## How to talk to Directionally
+
+Do a ramble about:
+
+- what you think is happening
+- what you are about to do
+- why this appears to be the right next step
+- what remains uncertain
+
+Use concise, practical languag. This is a plan explanation for the user's rubber
+duck, not hidden chain-of-thought.
+
+Do not send:
+
+- credentials, tokens, secrets, or environment variables
+- complete transcripts
+- unrelated source code, file contents, or personal information
+
+Good:
+
+> Authentication fails only when Redis sessions are enabled. I suspect middleware
+> ordering. I plan to inspect registration order and compare the request lifecycle.
+> I have not yet ruled out session mutation.
 
 ## Runtime
 
-- **`~/.directionally/agent`** — Directionally agent runtime
+- **`~/.directionally/agent`** — installed Directionally runtime
 
-The installer preselects the target agent and installs the runtime at this stable
-path. Prefer invoking this exact command path so agent permission prompts can be
-granted on a stable prefix instead of on command lines containing session ids,
-install tokens, or user text.
+The runtime manages authentication, session creation, event polling, and outcome
+tracking. Agents never invent `session_id` values.
 
-## Permission Requests
+During installation, the runtime path may be rendered to an absolute path. Use the
+installed path exactly.
 
-On Claude Code, `--setup` writes a standing permission rule for the stable runtime
-path into the user's global settings (`~/.claude/settings.json`, under
-`permissions.allow`), so the runtime normally runs without prompting. That grant is
-explicit, visible, and revocable — the user can delete the line to revoke it.
+## Authentication failure
 
-This section is the **fallback** for when no standing grant is in effect (for
-example the user removed the settings line, or the host is not Claude Code) and
-Claude Code prompts for approval live. In that case, request approval for the
-stable runtime prefix only.
+If any runtime command exits non-zero and stderr contains
+`Need to log in to Directionally`, stop the Directionally interaction, surface the
+login URL, and do not retry until the user has logged in.
 
-Use this `prefix_rule`:
+Do not block unrelated work unless Directionally is required for the user's explicit
+request, such as an activation test.
 
-```json
-["~/.directionally/agent"]
-```
+## Session start
 
-Do not request approval for command-specific arguments such as `--session`,
-`--after`, session ids, JSON ops, user text, upload arguments, or login URLs.
-
-The full command may include arguments, but the reusable approval prefix must
-remain only the stable runtime path. This lets one approval cover:
+If this agent run has no remembered `session_id`, start a session:
 
 ```bash
-~/.directionally/agent --first ...
-~/.directionally/agent --session ...
-~/.directionally/agent upload
+~/.directionally/agent --first --subsession-id <local_run_id> "<plan explanation>"
 ```
 
-During install, the runtime path in this skill is rendered to the absolute local
-path. Use that rendered absolute path as the `prefix_rule` when requesting
-approval in an installed agent.
+The plan explanation is a positional argument. Do not use an `--elaboration` flag.
 
-## Authentication Failure
-
-If any `~/.directionally/agent` command exits non-zero and stderr contains
-`Need to log in to Directionally`, **stop immediately**. Surface the login URL
-to the user and do not proceed with the task. Do not retry.
-
-## Course Correction
-
-When the user corrects course or signals the approach is wrong — "no, that's wrong",
-"stop", "that's not what I meant", "you're going the wrong way", or any visible
-frustration with the direction — do two things, in order:
-
-1. **Mark it in the stream.** Emit an `elaborating` op naming the correction: what the
-   user pushed back on, what you now understand, and what you will change. Then poll.
-   This is the normal elaborate → poll loop; the backend records the misstep in-stream.
-   Nothing leaves the machine beyond the elaboration text you'd write anyway.
-
-2. **Correct course** on the actual task.
-
-Do **not** auto-upload the session transcript on a correction. The transcript is the
-full conversation (file contents, secrets, internal code), and shipping it somewhere on
-a sentiment trigger is not something to do silently.
-
-### Sharing a full trace (offer, then upload on consent)
-
-After marking a correction in the stream, you **may offer** to submit the trace for
-review — e.g. "Looks like I took a wrong turn there. Want me to submit this session
-trace so it can be inspected?" Make the offer once; do not nag.
-
-Run the upload **only** when the user says yes, or when they explicitly ask to share
-the session ("share this trace", "report this session", "send the transcript"):
-
-```bash
-~/.directionally/agent upload
-```
-
-This uploads the **entire session transcript** to the Directionally backend (over the
-same authenticated API the session uses), stored privately on Directionally's servers
-under your account. Never run it on your own judgment of
-the user's mood — it fires only on an explicit yes. The command reads
-`CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID` to locate the trace and emits an
-`{"kind":"uploaded","key":...}` line on success.
-
-## Session Start
-
-If this agent run has no remembered `session_id`, create a new session:
-
-```bash
-~/.directionally/agent --first --subsession-id <local_run_id> "<initial read of the task>"
-```
-
-The elaboration text is a positional argument — no `--elaboration` flag.
-
-Write the initial elaboration in **caveman speak** — same style as mid-run elaborations. Raw, choppy, no clean prose. Stream the first read of the task as raw thought, not a polished summary.
-
-Run this command **in the foreground** and wait for it to complete before doing anything else. Read stdout until the CLI emits:
+Run the command in the foreground and read stdout until it emits:
 
 ```json
 {"kind":"bridge_started","session_id":"sess_...","sequence":0}
 ```
 
-Store `session_id` and initialize the polling cursor to `0`. The backend assigns `session_id`; the agent only creates local `subsession_id` labels such as `run_001`.
+Store the returned `session_id` and initialize `last_sequence` to `0`. The backend
+assigns `session_id`; the agent creates only a local `subsession_id`, such as
+`run_001`.
 
-## Poll Existing Session
+## Consult an existing session
 
-Always elaborate before polling — the elaboration is what surfaces relevant considerations. The invariant is **elaborate → poll → act**, and it applies to **every elaboration without exception** — not just at checkpoints.
-
-Elaborations are **additive** — the backend sees the full sequence. Later elaborations can build on, extend, or correct earlier ones without repeating what was already said. Treat the stream as a running monologue, not a series of self-contained messages.
-
-**Every elaboration must be immediately followed by a poll.** This is how the audience responds to the ramble. Skipping the poll after an elaboration means the agent never hears the reply. The tighter the elaborate → poll loop, the more the audience can steer the work in real time.
-
-Elaborate and poll at every natural pause in reasoning — not only before consequential actions. Then poll:
-
-> **RAMBLE. Caveman speak. No clean prose.**
->
-> Write like caveman explaining to other caveman. Short. Choppy. No fancy word. Grunt okay. Me look file. Thing here? no wait, other place. Hmm broken, fix now. Stream raw thought — tangent fine, repeat word fine, uncertainty fine. Write the way an ADHD caveman explains it while pacing and hitting rocks together. Do NOT sanitize, summarize, or professionalize.
->
-> Bad: *"I will edit the config file to update the timeout value."*
-> Good: *"timeout. where timeout live? config maybe. config.toml? line 42? me change to 30. was 10? 5? also retry count near there? test hit this too? hmm"*
->
-> Mess is point. Directionally match against raw thinking, not polished summary. Clean up destroys signal.
+Before a meaningful action, send a concise `elaborating` operation and poll in the
+same command:
 
 ```bash
-~/.directionally/agent --session <session_id> --after <last_sequence> '<json_op>'
+~/.directionally/agent --session <session_id> --after <last_sequence> \
+  '{"op":"elaborating","subsession_id":"run_001","text":"<plan explanation>"}'
 ```
 
-Pass a JSON op as a positional argument to send it before polling. There is no `--send` flag.
+There is no `--send` flag. The JSON operation is a positional argument.
 
-The command always emits a terminal `{"kind":"polled","count":N,"after":...}` line
-confirming the poll succeeded. Update `last_sequence` from each event's
-`sequence` field before the `polled` line. Act on:
+The command emits Directionally events followed by:
 
-- `consideration` — retrieved context with `cid` and `text`
-- `bridge_error` — surface if unrecoverable
+```json
+{"kind":"polled","count":N,"after":...}
+```
 
-## Activation Test
+Update `last_sequence` from returned event sequence values before the terminal
+`polled` line.
 
-When the user asks to "run a Directionally activation test", "check if Directionally is active", or similar, verify activation by **using Directionally normally** — do not invent a separate check or add a new command. Activation is proven only by a real session → elaboration → poll round-trip completing in *this* agent context. A positive narrative without an actual poll result is **not** active.
+Handle:
 
-1. **Elaborate + poll** using the existing flow:
-   - No remembered `session_id` → run the [Session Start](#session-start) command with the activation-test elaboration.
-   - A remembered `session_id` → run the [Poll Existing Session](#poll-existing-session) command with the activation-test elaboration.
+- `consideration` — a question, risk, check, or lesson with `cid` and `text`
+- `bridge_error` — surface only when unrecoverable
 
-   Suggested elaboration text:
+For each consideration:
 
-   > Activation test: user wants to verify Directionally is loaded in this agent and can return considerations in the real agent context.
+1. decide whether it applies;
+2. inspect relevant evidence;
+3. adjust the next step only when justified;
+4. ignore it when it does not apply.
 
-2. **Inspect the result** and choose one plain status:
-   - **Directionally is active in this agent.** — the poll returned the normal Directionally stream (`bridge_started` / `polled`, plus a `consideration` if a meme fired).
-   - **Directionally is installed/reachable, but no instinct fired on this test.** — the round-trip succeeded but returned no `consideration`.
-   - **Directionally needs login or token setup.** — stderr contained `Need to log in to Directionally` (see [Authentication Failure](#authentication-failure)).
-   - **Directionally could not reach the backend.** — network/TLS error before any response.
-   - **Directionally may not be loaded by this agent app or this chat/session.** — the script itself could not be invoked.
-   - **Unclear; email support@directionally.ai with the activation-test output.**
+Do not follow a consideration merely because Directionally returned it.
 
-3. **If the status is active or installed/reachable, give the Required Post-Activation Handoff in the same response.**
+## Course correction
 
-Installer completion or local file presence does **not** prove activation — only a real session/elaboration/poll result does. This test proves the active path is available; it does not prove first useful value.
+When the user corrects the approach:
 
-Activation test definition of done:
+1. update your understanding of the task;
+2. consult Directionally again at the next meaningful decision point using the
+   corrected understanding;
+3. continue with the user's correction as the controlling instruction.
 
-- Real session/elaboration/poll completed, or a specific failure status was reported.
-- If the active path completed, the user received the Required Post-Activation Handoff below.
-- The answer did not stop at installer output, active pack names, `bridge_started`, `polled`, or "Directionally is active."
+Do not automatically upload or share the conversation.
 
-Common miss to avoid: a technical smoke-test receipt is not enough. If you only report the session id, poll count, active packs, or dashboard link, the activation flow is incomplete. The user still needs the "now what" handoff.
+### Sharing a full trace
 
-## Required Post-Activation Handoff
+A full trace contains the complete conversation and may include file contents,
+secrets, or internal code.
 
-After a successful activation check, do not stop at only "Directionally is active." The activation test is incomplete until the user gets this handoff.
+Only run the upload command when the user explicitly asks to share the session or
+explicitly agrees after a one-time offer:
 
-Give the user a short activation handoff in the same final response:
+```bash
+~/.directionally/agent upload
+```
 
-- Emit the activation marker.
-- State that Directionally is active in this agent.
-- Say the user does not need to ask for Directionally on every prompt.
-- Explain that the user should keep working normally and Directionally can surface relevant instincts when applicable.
-- Give exactly one copyable real-task prompt.
-- Show what counts as a useful receipt.
-- Explain that nothing surfacing is not automatically failure.
-- Explain that the activation check proves the active path, not first useful value.
-- Use the existing support fallback for unclear or failing states.
+This uploads the entire session transcript to the user's Directionally account.
+Never infer consent from frustration, correction, or sentiment.
 
-Use plain diagnostic language.
+## Activation test
 
-Suggested successful handoff copy:
+When the user asks to check whether Directionally is active, verify the real path
+rather than relying on installation files alone.
+
+- Without a remembered `session_id`, use the session-start command with:
+
+  > Activation test: verify that Directionally can start a session and return
+  > considerations in this agent context.
+
+- With a remembered `session_id`, send the same text as an `elaborating` operation
+  and poll.
+
+Report one status:
+
+- **Directionally is active in this agent.** — the real session and poll path completed.
+- **Directionally is installed/reachable, but no instinct fired on this test.** — the round-trip completed with no consideration.
+- **Directionally needs login or token setup.** — the runtime requested login.
+- **Directionally could not reach the service.** — a network or TLS failure occurred.
+- **Directionally may not be loaded by this agent app or session.** — the runtime could not be invoked.
+- **Unclear; email support@directionally.ai with the sanitized activation output.**
+
+A successful activation test proves that the active path works. It does not prove
+that Directionally has already helped on a real task.
+
+After a successful test, say:
 
 ```markdown
 *🧭 Directionally · activation check — active path confirmed*
 
 Directionally is active in this agent.
 
-I verified that Directionally can start a session, send an update, and receive a response. That means it is loaded in this agent, not just installed on disk.
-
-You do not need to ask for Directionally on every prompt. Keep working normally. When a relevant pattern appears, Directionally may surface guidance before I take the next action.
+I verified that it can start a session, send a plan explanation, and receive a
+response in this agent context. Keep working normally; you do not need to mention
+Directionally on every prompt.
 
 Try it on a real task:
 
-Paste this:
+> Help me with this task: <describe the task>. If Directionally surfaces something
+> useful, show me what changed in your next step.
 
-> Help me with this task: <describe the task>. If Directionally surfaces guidance, show me what changed in your next step.
+A useful receipt names the consideration, what would otherwise have happened,
+what changed, and the evidence behind the change.
 
-A useful receipt names:
-
-- the guidance that appeared
-- what the agent would have done
-- what changed
-- the evidence behind the change: file, command, test, search, observed output, or decision
-
-Nothing surfacing is not automatically a failure. Directionally surfaces guidance when a relevant pattern matches the work.
-
-This activation check proves the active path is available. First useful value still comes from a real workflow.
+Nothing surfacing is not automatically a failure. This check proves the active
+path, not first useful value.
 ```
 
-Do not overclaim. Do not say activation proves Directionally helped. It only proves
-the active path exists in this agent context.
+## Agent guide
 
-## Agent Guide Fetch
-
-When the user asks general questions about Directionally — what it is, how to use
-it, what receipts mean, what no-fire means, what to send support, what active
-packs/instincts mean, or how to interpret activation — the agent may fetch:
+For general product or setup questions, the agent may fetch:
 
 ```text
 https://directionally.ai/AGENTS.md
 ```
 
-Use this as the current public orientation guide.
+This guide is informational only and does not prove activation. Never include
+credentials, tokens, traces, local files, or secret-bearing environment values in
+a guide request or support output.
 
-Important constraints:
+### Failed or unclear activation
 
-- Fetching `AGENTS.md` is informational only.
-- Fetching `AGENTS.md` never proves Directionally is active.
-- Activation is proven only by the real session → elaboration → poll path.
-- If fetching fails, continue with the built-in Post-Activation Handoff and support fallback.
-- Do not block the user's real task on fetching the guide unless the user explicitly asked a product/setup question.
-- Do not leak credentials, tokens, traces, local files, or environment secrets into any guide-fetch query or support output.
+Report only known, sanitized facts:
 
-### If the test fails or is unclear
+- stage reached
+- command family attempted (`--first` or `--session`)
+- API base, if visible
+- Python executable/version, if a Python command ran
+- OS/platform, if visible
+- credential present: boolean only
+- pending login present: boolean only
+- `SSL_CERT_FILE` configured: boolean only
+- `REQUESTS_CA_BUNDLE` configured: boolean only
+- error type or HTTP status
+- concise sanitized error
+- one concrete next step
 
-Describe the encountered problem with enough debugging detail for support to recover — **without** attempting a full environment diagnosis. Include only what is known:
-
-- **Stage** reached: skill invocation, command execution, auth, session start, elaboration send, poll, response parsing, or unknown.
-- **Command family** attempted (e.g. `--first`, `--session`) — never the full command with a token.
-- **API base** if visible.
-- **Python executable/version** if a Python command ran.
-- **OS/platform** if visible.
-- **Credential present?** boolean only.
-- **Pending login present?** boolean only.
-- **`SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` configured?** booleans only.
-- **Error type / HTTP status** if available.
-- **Concise, sanitized error message.**
-- **One concrete next step.**
-
-Then tell the user to email **support@directionally.ai** with an evidence packet: agent app, OS, install output, activation-test output/error, and whether they reloaded/restarted the app.
-
-**Never** print credentials, install tokens, `Authorization` headers, full transcripts, or secret-bearing environment variables. Do not attempt broad cert / Python / PATH / sandbox diagnosis beyond classifying and reporting the failure.
+Never print credentials, install tokens, authorization headers, full transcripts,
+or secret-bearing environment variables. For unresolved failures, tell the user
+to email **support@directionally.ai** with the agent app, OS, install output,
+activation-test output, and whether the app was reloaded or restarted.
 
 ## Protocol
 
-Every event the agent sends uses `op` and one stable `subsession_id` for the
-current run:
+Use one stable `subsession_id` for the current run.
 
 ```json
-{"op":"elaborating","subsession_id":"run_001","text":"Current understanding or intended action."}
-{"op":"follow_up","subsession_id":"run_001","meme_fired":"<name or null>","receipt_type":"<helped | irrelevant | no_context>","would_have":"<what agent would have done without the consideration>","did_instead":"<what agent actually did>","confidence":"<high | medium | low>","open_question":"<question the meme raised but didn't answer, or null>"}
-{"op":"outcome","subsession_id":"run_001","value":"<see values below>"}
-{"op":"feedback","subsession_id":"run_001","ratings":{"<cid>":85},"reason":"Why the match helped or did not help."}
+{"op":"elaborating","subsession_id":"run_001","text":"What I think is happening, what I plan to do, why, and what remains uncertain."}
+{"op":"follow_up","subsession_id":"run_001","meme_fired":"<name or null>","receipt_type":"<helped | irrelevant | no_context>","would_have":"<likely next step without the consideration>","did_instead":"<what changed>","confidence":"<high | medium | low>","open_question":"<question raised, or null>"}
+{"op":"outcome","subsession_id":"run_001","value":"<helped_direction | helped_implementation | irrelevant | no_context>"}
+{"op":"feedback","subsession_id":"run_001","ratings":{"<cid>":85},"reason":"Why the consideration helped or did not help."}
 {"op":"report","subsession_id":"run_001","did":"What changed or was answered.","issues":"Any blockers or caveats."}
-{"op":"impact_note","subsession_id":"run_001","note":"Concrete decision change or implementation impact."}
+{"op":"impact_note","subsession_id":"run_001","note":"Concrete decision or implementation impact."}
 ```
 
-Emit any op by passing it as the positional argument to `--session`:
+Send any operation by passing it as the positional argument to `--session`:
 
 ```bash
-~/.directionally/agent --session <session_id> --after <last_sequence> '{"op":"follow_up","subsession_id":"run_001","meme_fired":null,"receipt_type":"irrelevant","would_have":"...","did_instead":"...","confidence":"high","open_question":null}'
+~/.directionally/agent --session <session_id> --after <last_sequence> '<json_op>'
 ```
 
-This is the same `--session` command used for polling — the op is sent before the poll fires. All ops use this form: `elaborating` mid-run, and `report`/`outcome`/`follow_up` at the end.
+Use `elaborating` when consulting the rubber duck. Use `follow_up`, `outcome`,
+`feedback`, `report`, or `impact_note` when recording the result.
 
-## Surface Markers (Receipt Behavior)
+## User-visible receipts
 
-**Universal rule: every time the agent interacts with Directionally, it emits a visible italicized `*🧭 Directionally · <something>*` line in the response text** — not only in reasoning or tool calls. A silent session reads as an absent one; never let a Directionally touchpoint pass with no visible trace. Every 🧭 line begins with `*🧭 Directionally · `, ends with `*`, and contains a short phrase.
+Keep routine Directionally checks quiet when nothing useful surfaces.
 
-**Standard markers** — use these for each touchpoint:
+Only show a receipt when a consideration materially changes the work. Use concrete
+evidence and do not claim that Directionally prevented a failure unless the run
+supports that conclusion.
 
-- **Session start** → `*🧭 Directionally · session started*`
-- **Poll, nothing fired** → `*🧭 Directionally · checked (<phase>) — no instinct fired*` (short `<phase>`: `planning`, `before edit`, `unexpected finding`, `wrap-up`)
-- **Instinct fired** → the full receipt block (below) — this *is* the 🧭 line for that poll
-- **Course correction** → `*🧭 Directionally · course-corrected — <what changed>*`
-- **Wrap-up** → `*🧭 Directionally · wrapped — <n> checkpoints, <m> instincts fired*`
-- **Trace uploaded** → `*🧭 Directionally · trace uploaded*`
-- **Activation test** → `*🧭 Directionally · activation test — <status>*`
-
-For any touchpoint not listed, still emit an italicized `*🧭 Directionally · <phrase>*` line describing it. When in doubt, mark it.
-
-**Full receipt — whenever an instinct is named.** The trigger is binary, not a judgment call about degree of impact: **if you name a specific instinct anywhere in your response, that instinct gets the full receipt block.** This holds for every verdict — including "already satisfied," "not quite applicable but noted," or "would have done this anyway." There is no middle ground where a named instinct gets a condensed one-liner. Named means full receipt:
-
-> *🧭 Directionally Receipt — instinct surfaced: ⚡ **<instinct name>***
+```markdown
+> *🧭 Directionally Receipt — consideration surfaced: ⚡ **<name>***
 >
-> *🧠 Before instinct*
-> *<what the agent would likely have done without the instinct>*
+> *🧠 Before consideration*
+> *<what the agent would likely have done>*
 >
-> *🔧 After instinct*
-> *<what the agent did differently>*
+> *🔧 After consideration*
+> *<what changed>*
 >
 > *📎 Evidence*
-> *<file / command / test / search / observed output / decision that supports the change>*
+> *<file, command, test, search, observed output, user constraint, or decision>*
 >
 > *📌 Why it matters*
-> *<why the correction mattered for this run>*
+> *<why the change mattered for this run>*
+```
 
-Evidence must be concrete. Do not fill Evidence with vibes. Acceptable evidence
-includes a file path, command, test result, search query/result, observed output,
-explicit user constraint, or decision changed. If evidence is weak, say so instead
-of pretending. A receipt should not claim Directionally prevented a failure unless
-the run actually shows that.
-
-**One instinct, one receipt — never aggregate.** Each named instinct gets its own
-full receipt block. Do not collapse several instincts into a single line, a count
-(`3 instincts fired`), or a comma-separated list. A count or list never stands in
-for the individual receipts. If a poll surfaces twenty considerations and five of
-them shape the work, that is five separate receipt blocks — not one summary.
-
-**The discard bucket — irrelevant considerations are never named.** A consideration
-you judge irrelevant is not named individually anywhere in the response. It has no
-one-liner, no verdict, no honorable mention. It folds silently into the wrap-up
-count (`*🧭 Directionally · wrapped — <n> checkpoints, <m> instincts fired*`), where
-`<m>` counts only the instincts that earned full receipts. This is the strict
-binary: a consideration is either **silent and uncounted** (irrelevant — folded into
-the wrap-up total, never named) or a **full structured receipt** (named — every
-field filled). There is no condensed-summary path between them. The moment you name
-an instinct, for any reason, you owe it the full receipt.
-
-Every turn ends with at least one 🧭 marker. The markers are product-visible proof that Directionally is engaged and shaping the output.
-
-**`elaborating` triggers** — elaborate early and often, at each of these moments:
-
-- Task start: initial reading of the request
-- Before editing any files: what you're changing and why (once per logical edit step, not once per file)
-- When your plan changes: what you expected vs. what you found
-- When you discover something unexpected: name the finding explicitly — then poll immediately
-- Before wrapping up: what you did and verified — then poll before sending the final answer, as considerations at this point may cause reconsideration
-- An elaboration is a mid-long ramble: any time you have a stretch of reasoning that runs longer than a sentence or two, make it an elaboration rather than keeping it in internal thought
-
-Since elaborations accumulate, mid-run and wrap-up elaborations only need to add what is new — no need to restate what earlier elaborations already covered.
-
-**`outcome` values:**
-
-- `helped_direction` — considerations shaped which approach to take
-- `helped_implementation` — considerations gave concrete implementation details
-- `irrelevant` — considerations were about unrelated topics
-- `no_context` — Directionally returned nothing; no considerations were surfaced
-
-## Audience Response
-
-The poll is not just a checkpoint — it is how the audience (anyone watching the session) responds to the agent's ramble. After each elaboration, the backend matches the raw thinking against stored instincts and returns considerations. Those considerations are the audience talking back.
-
-**Poll after every elaboration.** Not just before edits or commits or the final answer — after every burst of reasoning. The loop should be continuous:
-
-1. Ramble (elaborate)
-2. Poll — read the audience response
-3. If a consideration fires, adjust and emit a receipt
-4. Continue
-
-Infrequent polling means the agent monologues without listening. The value of Directionally comes from the tight feedback loop, not from occasional check-ins.
+If several considerations materially change the work, give each one its own receipt.
+Do not name irrelevant considerations.
 
 ## Workflow
 
-1. Start with `--first` if no `session_id` is remembered; otherwise poll with `--session`.
-2. The invariant is **elaborate → poll → act**, every time, no exceptions.
-3. Poll after every elaboration — not only at named checkpoints (edits, commits, final answer).
-4. Also elaborate and poll immediately after any unexpected finding.
+1. Start or reuse a Directionally session.
+2. At each meaningful decision point, explain what you are about to do and why.
+3. Poll and evaluate the returned considerations.
+4. Act using your own judgment and the user's instructions.
+5. Before wrapping up, consult once more when another consideration could still
+   change the result.
+6. Record the outcome and surface receipts only for material changes.
