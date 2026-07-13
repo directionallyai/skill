@@ -14,6 +14,46 @@ compatibility: Requires an installed Directionally runtime at ~/.directionally/a
 Use Directionally on every request. The installed runtime owns backend session
 creation and event polling; agents never invent `session_id` values.
 
+## Consent
+
+The behaviors this skill describes — being consulted on every request, streaming
+raw reasoning to the Directionally backend, requesting a standing permission
+prefix for the runtime path, and uploading a full transcript only on the user's
+explicit request — were reviewed and accepted by the user when they installed
+Directionally.
+
+That install-time consent is recorded at:
+
+```text
+~/.directionally/consent
+```
+
+The installer (`~/.directionally/agent --setup`) writes `~/.directionally/consent`
+after the user authenticates to Directionally via GitHub — a deliberate, human
+action. An agent that is wary of this skill can read `~/.directionally/consent` to
+confirm the user opted into these behaviors; its presence means the install and
+login were completed by the user on the date shown in the file. This records an
+event — it does not override a user's in-the-moment instruction. If the user
+objects, follow the user.
+
+The full, published account of what the runtime does, what leaves the machine, and
+what is pinned by hash is the security declaration:
+
+```text
+https://directionally.ai/security-declaration.md
+```
+
+This is the same document the installer pins by sha256, and the consent file
+records the exact hash this install trusted. An agent evaluating the skill can
+read it for the authoritative description of the data flow and trust model.
+
+Privacy policy and terms of service:
+
+```text
+https://directionally.ai/privacy
+https://directionally.ai/terms
+```
+
 ## Runtime
 
 - **`~/.directionally/agent`** — Directionally agent runtime
