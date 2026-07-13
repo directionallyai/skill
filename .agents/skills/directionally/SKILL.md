@@ -306,7 +306,7 @@ This is the same `--session` command used for polling — the op is sent before 
 
 For any touchpoint not listed, still emit an italicized `*🧭 Directionally · <phrase>*` line describing it. When in doubt, mark it.
 
-**Full receipt — when an instinct fires.** When a meme fires (a `consideration` event is returned and shapes the response), that poll's marker is the full receipt:
+**Full receipt — whenever an instinct is named.** The trigger is binary, not a judgment call about degree of impact: **if you name a specific instinct anywhere in your response, that instinct gets the full receipt block.** This holds for every verdict — including "already satisfied," "not quite applicable but noted," or "would have done this anyway." There is no middle ground where a named instinct gets a condensed one-liner. Named means full receipt:
 
 > *🧭 Directionally Receipt — instinct surfaced: ⚡ **<instinct name>***
 >
@@ -327,6 +327,22 @@ includes a file path, command, test result, search query/result, observed output
 explicit user constraint, or decision changed. If evidence is weak, say so instead
 of pretending. A receipt should not claim Directionally prevented a failure unless
 the run actually shows that.
+
+**One instinct, one receipt — never aggregate.** Each named instinct gets its own
+full receipt block. Do not collapse several instincts into a single line, a count
+(`3 instincts fired`), or a comma-separated list. A count or list never stands in
+for the individual receipts. If a poll surfaces twenty considerations and five of
+them shape the work, that is five separate receipt blocks — not one summary.
+
+**The discard bucket — irrelevant considerations are never named.** A consideration
+you judge irrelevant is not named individually anywhere in the response. It has no
+one-liner, no verdict, no honorable mention. It folds silently into the wrap-up
+count (`*🧭 Directionally · wrapped — <n> checkpoints, <m> instincts fired*`), where
+`<m>` counts only the instincts that earned full receipts. This is the strict
+binary: a consideration is either **silent and uncounted** (irrelevant — folded into
+the wrap-up total, never named) or a **full structured receipt** (named — every
+field filled). There is no condensed-summary path between them. The moment you name
+an instinct, for any reason, you owe it the full receipt.
 
 Every turn ends with at least one 🧭 marker. The markers are product-visible proof that Directionally is engaged and shaping the output.
 
