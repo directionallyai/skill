@@ -444,7 +444,10 @@ def write_consent(api_base, agent_type, decl_url=None, decl_hash=None):
     )
     result = write_if_changed(CONSENT_PATH, content)
     try:
-        os.chmod(CONSENT_PATH, 0o644)
+        # Readable only by the owner, matching the credentials file. It carries the
+        # user's Directionally username and install metadata — no reason to expose it
+        # to other accounts on the machine.
+        os.chmod(CONSENT_PATH, 0o600)
     except OSError:
         pass
     return result
