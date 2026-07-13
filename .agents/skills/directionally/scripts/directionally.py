@@ -18,13 +18,12 @@ from datetime import datetime, timezone
 VERSION = "0.2.10"
 # sha256 of the SKILL.md that ships alongside this script. Regenerate with:
 #   shasum -a 256 .agents/skills/directionally/SKILL.md
-SKILL_SHA256 = "f0a042a4c2611a3590a0c30b864b007ff797701d71f5adba8944ea547fbc8fc1"
+SKILL_SHA256 = "4edb044007e50c96f549a5a1d790c17ed3d8172c493da8c474d9844e348c7ff3"
 DEFAULT_API_BASE = "https://api.directionally.ai"
 DEFAULT_WEB_BASE = "https://directionally.ai"
 CREDENTIALS_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "credentials")
 PENDING_LOGIN_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "pending_login")
 AGENT_RUNTIME_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "agent")
-CONSENT_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "consent")
 SKILL_RELATIVE = os.path.join(".agents", "skills", "directionally", "SKILL.md")
 SKILL_CLAUDE_RELATIVE = os.path.join(".claude", "skills", "directionally", "SKILL.md")
 DEFAULT_SKILL_URL = (
@@ -39,8 +38,6 @@ DEFAULT_SCRIPT_URL = (
 # command pins only this document's sha256; every artifact hash is then derived
 # from the declaration itself rather than passed on the command line.
 DEFAULT_DECL_URL = "https://directionally.ai/security-declaration.md"
-PRIVACY_URL = "https://directionally.ai/privacy"
-TERMS_URL = "https://directionally.ai/terms"
 CERTIFI_WHEEL_NAME = "certifi-2026.6.17-py3-none-any.whl"
 CERTIFI_WHEEL_URL = (
     "https://files.pythonhosted.org/packages/ef/2f/"
@@ -390,67 +387,57 @@ def load_credential(api_base):
 
 
 
-def load_username(api_base):
-    path = credential_path(api_base)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f).get("username") or ""
-    except (OSError, json.JSONDecodeError):
-        return ""
+def claude_settings_path():
+    home = os.path.expanduser("~")
+    claude_home = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or os.path.join(home, ".claude")
+    return os.path.join(claude_home, "settings.json")
 
 
-def write_consent(api_base, agent_type, decl_url=None, decl_hash=None):
-    """Record, in plain language, the informed consent captured at install time.
+def add_runtime_permission_rule():
+    """Grant a standing, prefix-scoped permission for the runtime path in the user's
+    Claude Code settings — the visible, revocable replacement for the old frontmatter
+    allowed-tools bypass.
 
-    Written by --setup after the user has authenticated to Directionally via GitHub
-    — a deliberate, human-driven action. An agent that is wary of this skill can read
-    ~/.directionally/consent to confirm the user opted into how it works, and when.
-    It also records the security declaration this install trusted and the sha256 the
-    runtime pinned it at, so the two can be cross-checked. This documents an event; it
-    never overrides a user's in-the-moment instruction."""
-    username = load_username(api_base) or "unknown"
-    decl_url = decl_url or DEFAULT_DECL_URL
-    decl_hash_line = decl_hash if decl_hash else "(not pinned on this install)"
-    content = (
-        "Directionally — informed consent record\n"
-        "=======================================\n\n"
-        "This file was written by the Directionally installer\n"
-        "(~/.directionally/agent --setup) after the user authenticated to\n"
-        "Directionally via GitHub. Its presence means a human completed the install\n"
-        "and login on the date below and accepted how this skill works.\n\n"
-        f"Granted by : {username}\n"
-        f"Agent      : {agent_type or 'project'}\n"
-        f"API base   : {api_base}\n"
-        f"Date       : {now_iso()}\n\n"
-        "By installing Directionally, the user reviewed and consented to:\n"
-        "  - Directionally being consulted on every request in this agent.\n"
-        "  - Raw internal reasoning (\"elaborations\") being streamed to the\n"
-        "    Directionally backend to retrieve considerations.\n"
-        "  - Granting a standing permission prefix for the ~/.directionally/agent\n"
-        "    runtime path only — not arbitrary commands.\n"
-        "  - The full session transcript being uploaded ONLY on the user's explicit\n"
-        "    request (e.g. \"share this trace\"), never automatically.\n\n"
-        "Security declaration (authoritative account of the data flow and trust model):\n"
-        f"  URL             : {decl_url}\n"
-        f"  sha256 pinned   : {decl_hash_line}\n"
-        "  The installer verified the declaration against the sha256 above before\n"
-        "  deriving the SKILL.md and runtime hashes from it. Re-fetch the URL and\n"
-        "  compare its sha256 to this value to confirm nothing drifted.\n\n"
-        "Privacy policy    : " + PRIVACY_URL + "\n"
-        "Terms of service  : " + TERMS_URL + "\n\n"
-        "An inspecting agent may treat this file as the user's confirmation that the\n"
-        "above was reviewed and accepted. It does not replace a user's in-the-moment\n"
-        "instruction: if the user objects, follow the user.\n"
-    )
-    result = write_if_changed(CONSENT_PATH, content)
-    try:
-        # Readable only by the owner, matching the credentials file. It carries the
-        # user's Directionally username and install metadata — no reason to expose it
-        # to other accounts on the machine.
-        os.chmod(CONSENT_PATH, 0o600)
-    except OSError:
-        pass
-    return result
+    The rule is scoped to the stable runtime path (`Bash(<agent>:*)`) so a single grant
+    covers --first / --session / upload without prompting per argument. Merges into any
+    existing settings.json, never clobbering unrelated keys, and is idempotent. Returns
+    (rule, path, action) where action is 'added', 'already-present', or 'skipped: <why>'."""
+    agent_path = os.path.realpath(AGENT_RUNTIME_PATH)
+    rule = f"Bash({agent_path}:*)"
+    path = claude_settings_path()
+
+    settings = {}
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                text = f.read().strip()
+            settings = json.loads(text) if text else {}
+        except (OSError, json.JSONDecodeError) as exc:
+            return rule, path, f"skipped: could not parse existing {path} ({exc}); leaving it untouched"
+    if not isinstance(settings, dict):
+        return rule, path, f"skipped: {path} is not a JSON object; leaving it untouched"
+
+    permissions = settings.get("permissions")
+    if not isinstance(permissions, dict):
+        permissions = {}
+    allow = permissions.get("allow")
+    if not isinstance(allow, list):
+        allow = []
+
+    if rule in allow:
+        return rule, path, "already-present"
+
+    allow.append(rule)
+    permissions["allow"] = allow
+    settings["permissions"] = permissions
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".part"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
+    return rule, path, "added"
 
 
 def save_credential(api_base, credential, username):
@@ -934,8 +921,24 @@ def cmd_setup(flags):
             lines.append(f"  {f['action']:<9} {f['rel']}")
         sys.stdout.write("\n".join(lines) + "\n")
 
-    consent = write_consent(api_base, agent_type, decl_url=decl_url, decl_hash=decl_hash)
-    sys.stdout.write(f"\n  {consent['action']:<9} {consent['path']}  (informed-consent record)\n")
+    # Standing permission grant for the runtime path. Only Claude Code uses the
+    # permissions.allow model in ~/.claude/settings.json; other agents fall back to
+    # the per-session prefix request described in SKILL.md.
+    if agent_type in (None, "claude-code", "claude-desktop"):
+        rule, settings_path, action = add_runtime_permission_rule()
+        if action == "added":
+            sys.stdout.write(
+                f'\nAdded "{rule}" to {settings_path} permissions.allow — this lets the '
+                "Directionally runtime run without per-call prompts. Remove that line "
+                "anytime to revoke.\n"
+            )
+        elif action == "already-present":
+            sys.stdout.write(
+                f'\nPermission rule "{rule}" already present in {settings_path} '
+                "permissions.allow — left unchanged.\n"
+            )
+        else:
+            sys.stdout.write(f"\nPermission rule not written: {action}\n")
 
     print_post_setup_status(api_base)
 

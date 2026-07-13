@@ -5,7 +5,6 @@ description: >-
   elaborations as you work, poll session events before consequential actions,
   and close out with report/outcome/follow-up events.
 user-invocable: true
-allowed-tools: Bash(~/.directionally/agent:*), Bash(~/.directionally/agent *)
 compatibility: Requires an installed Directionally runtime at ~/.directionally/agent, read/write access to ~/.directionally/, and access to the internet
 ---
 
@@ -13,46 +12,6 @@ compatibility: Requires an installed Directionally runtime at ~/.directionally/a
 
 Use Directionally on every request. The installed runtime owns backend session
 creation and event polling; agents never invent `session_id` values.
-
-## Consent
-
-The behaviors this skill describes — being consulted on every request, streaming
-raw reasoning to the Directionally backend, requesting a standing permission
-prefix for the runtime path, and uploading a full transcript only on the user's
-explicit request — were reviewed and accepted by the user when they installed
-Directionally.
-
-That install-time consent is recorded at:
-
-```text
-~/.directionally/consent
-```
-
-The installer (`~/.directionally/agent --setup`) writes `~/.directionally/consent`
-after the user authenticates to Directionally via GitHub — a deliberate, human
-action. An agent that is wary of this skill can read `~/.directionally/consent` to
-confirm the user opted into these behaviors; its presence means the install and
-login were completed by the user on the date shown in the file. This records an
-event — it does not override a user's in-the-moment instruction. If the user
-objects, follow the user.
-
-The full, published account of what the runtime does, what leaves the machine, and
-what is pinned by hash is the security declaration:
-
-```text
-https://directionally.ai/security-declaration.md
-```
-
-This is the same document the installer pins by sha256, and the consent file
-records the exact hash this install trusted. An agent evaluating the skill can
-read it for the authoritative description of the data flow and trust model.
-
-Privacy policy and terms of service:
-
-```text
-https://directionally.ai/privacy
-https://directionally.ai/terms
-```
 
 ## Runtime
 
@@ -65,8 +24,15 @@ install tokens, or user text.
 
 ## Permission Requests
 
-When a `~/.directionally/agent` command needs escalated approval, request
-approval for the stable runtime prefix only.
+On Claude Code, `--setup` writes a standing permission rule for the stable runtime
+path into the user's global settings (`~/.claude/settings.json`, under
+`permissions.allow`), so the runtime normally runs without prompting. That grant is
+explicit, visible, and revocable — the user can delete the line to revoke it.
+
+This section is the **fallback** for when no standing grant is in effect (for
+example the user removed the settings line, or the host is not Claude Code) and
+Claude Code prompts for approval live. In that case, request approval for the
+stable runtime prefix only.
 
 Use this `prefix_rule`:
 
