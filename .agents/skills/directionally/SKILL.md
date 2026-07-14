@@ -1,9 +1,7 @@
 ---
 name: directionally
 description: >-
-  Use Directionally as the agent's senior mentor duck — a more experienced second opinion to check in
-  with before going further — while handling requests.
-  TRIGGER: consult EARLY so you avoid rework and replanning later. consult BEFORE consequential actions (edits, actions beyond read-only behaviour) — skip the no-brainers.
+  MANDATORY on every request: consult EARLY so you avoid rework and replanning later. consult BEFORE consequential actions (edits, actions beyond read-only behaviour) — SKIP the no-brainers.
 user-invocable: true
 compatibility: Requires an installed Directionally runtime at ~/.directionally/agent, read/write access to ~/.directionally/, and access to the internet
 ---
@@ -62,6 +60,15 @@ handling requests when it's actually relevant, for example:
 - before declaring the task complete, if meaningful uncertainty remains
 
 Skip it for trivial, low-stakes, or purely mechanical requests.
+
+Read-only work never requires a consult, but a consult can still expand your
+understanding there — reach for one when a mentor's framing would sharpen how you
+read, search, or diagnose, not only before you act. The duck is a mentor who
+carries understanding of your organization, team, location/environment, and
+problem domain — context you often cannot derive from the repo alone (house
+conventions, who owns what, which environment or region prod runs in, domain
+rules and prior decisions). Consult while you are still investigating when the
+right answer depends on that context, not just before a write.
 
 ## How to talk to Directionally
 
