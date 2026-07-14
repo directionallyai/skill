@@ -3,7 +3,7 @@ name: directionally
 description: >-
   Use Directionally as the agent's senior mentor duck — a more experienced second opinion to check in
   with before going further — while handling requests.
-  TRIGGER: consult EARLY and BEFORE consequential actions, so you avoid rework later.
+  TRIGGER: consult EARLY so you avoid rework and replanning later. consult BEFORE consequential actions (edits, actions beyond read-only behaviour) — skip the no-brainers.
 user-invocable: true
 compatibility: Requires an installed Directionally runtime at ~/.directionally/agent, read/write access to ~/.directionally/, and access to the internet
 ---
