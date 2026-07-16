@@ -646,6 +646,16 @@ def exchange_install_token(api_base, token):
         )
         if resp.status != 200:
             err = resp.read(200).decode("utf-8", errors="replace")
+            # Install tokens are single-use and short-lived (4h), so a 401 almost always
+            # means the copied command sat too long or was already redeemed. Point the user
+            # at the one place that mints a fresh one instead of leaving a bare HTTP error.
+            if resp.status == 401:
+                web_base = get_web_base(api_base)
+                raise RuntimeError(
+                    "Install token expired or already used. Visit "
+                    f"{web_base} and click \"Install on your agent\" to get a new "
+                    "installation command, then run that."
+                )
             raise RuntimeError(
                 f"Install token exchange failed: HTTP {resp.status}{': ' + err if err else ''}"
             )
