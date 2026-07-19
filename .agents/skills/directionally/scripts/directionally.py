@@ -54,6 +54,7 @@ def _global_skills_dir(agent_type):
     codex_home = os.environ.get("CODEX_HOME", "").strip() or os.path.join(home, ".codex")
     claude_home = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or os.path.join(home, ".claude")
     hermes_home = os.environ.get("HERMES_HOME", "").strip() or os.path.join(home, ".hermes")
+    pi_home = os.environ.get("PI_HOME", "").strip() or os.path.join(home, ".pi")
     config_home = os.environ.get("XDG_CONFIG_HOME", "").strip() or os.path.join(home, ".config")
     mapping = {
         "claude-code":     os.path.join(claude_home, "skills"),
@@ -64,6 +65,7 @@ def _global_skills_dir(agent_type):
         "cursor-desktop":  os.path.join(home, ".cursor", "skills"),
         "hermes-agent":    os.path.join(hermes_home, "skills"),
         "opencode":        os.path.join(config_home, "opencode", "skills"),
+        "pi":              os.path.join(pi_home, "agent", "skills"),
     }
     return mapping.get(agent_type)
 
@@ -890,7 +892,7 @@ def cmd_setup(flags):
 
     global_dir = _global_skills_dir(agent_type) if agent_type else None
     if agent_type and not global_dir:
-        raise ValueError(f"Unknown agent type: {agent_type!r}. Supported: claude-code, claude-desktop, codex, codex-desktop, cursor, cursor-desktop, hermes-agent, opencode.")
+        raise ValueError(f"Unknown agent type: {agent_type!r}. Supported: claude-code, claude-desktop, codex, codex-desktop, cursor, cursor-desktop, hermes-agent, opencode, pi.")
 
     files = []
 
@@ -1112,7 +1114,7 @@ def usage(code=0):
     msg = "\n".join([
         "Usage:",
         f"  {prog} --login",
-        f"  {prog} --setup <agent-type> [--token <tok>] [--decl-hash <sha256>] [--script-hash <sha256>]  # global install (claude-code, codex, cursor, hermes-agent, opencode, ...)",
+        f"  {prog} --setup <agent-type> [--token <tok>] [--decl-hash <sha256>] [--script-hash <sha256>]  # global install (claude-code, codex, cursor, hermes-agent, opencode, pi, ...)",
         f"  {prog} --setup [--cwd <path>] # project install (no agent type)",
         f"  {prog} upload  # gist the current session trace (needs CLAUDE_CODE_SESSION_ID/CODEX_THREAD_ID)",
         f"  {prog} --first --subsession-id <id> <text>",
