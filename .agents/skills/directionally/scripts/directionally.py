@@ -49,13 +49,20 @@ _TLS_CONTEXTS = {}
 
 # Global skills dirs per agent type, matching the npx-skills registry.
 # Each maps to ~/.{agent}/skills/ (or the agent's XDG equivalent).
-def _global_skills_dir(agent_type):
+def _global_skills_dir(agent_type, profile=None):
     home = os.path.expanduser("~")
     codex_home = os.environ.get("CODEX_HOME", "").strip() or os.path.join(home, ".codex")
     claude_home = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or os.path.join(home, ".claude")
     hermes_home = os.environ.get("HERMES_HOME", "").strip() or os.path.join(home, ".hermes")
     pi_home = os.environ.get("PI_HOME", "").strip() or os.path.join(home, ".pi")
     config_home = os.environ.get("XDG_CONFIG_HOME", "").strip() or os.path.join(home, ".config")
+    # Hermes supports named profiles: the "default" profile's skills live directly
+    # under <hermes_home>/skills, while every other profile is isolated under
+    # <hermes_home>/profiles/<profile>/skills.
+    if profile and profile != "default":
+        hermes_skills = os.path.join(hermes_home, "profiles", profile, "skills")
+    else:
+        hermes_skills = os.path.join(hermes_home, "skills")
     mapping = {
         "claude-code":     os.path.join(claude_home, "skills"),
         "claude-desktop":  os.path.join(claude_home, "skills"),
@@ -63,7 +70,7 @@ def _global_skills_dir(agent_type):
         "codex-desktop":   os.path.join(codex_home, "skills"),
         "cursor":          os.path.join(home, ".cursor", "skills"),
         "cursor-desktop":  os.path.join(home, ".cursor", "skills"),
-        "hermes-agent":    os.path.join(hermes_home, "skills"),
+        "hermes-agent":    hermes_skills,
         "opencode":        os.path.join(config_home, "opencode", "skills"),
         "pi":              os.path.join(pi_home, "agent", "skills"),
     }
@@ -890,7 +897,13 @@ def cmd_setup(flags):
     if effective_script_hash:
         verify_download("directionally.py", script_body, effective_script_hash)
 
-    global_dir = _global_skills_dir(agent_type) if agent_type else None
+    # Optional --profile selects a named Hermes profile: "default" (or omitted)
+    # installs into <hermes_home>/skills, anything else into that profile's dir.
+    profile = flags.get("profile")
+    if profile is True or profile == "":
+        profile = None
+
+    global_dir = _global_skills_dir(agent_type, profile) if agent_type else None
     if agent_type and not global_dir:
         raise ValueError(f"Unknown agent type: {agent_type!r}. Supported: claude-code, claude-desktop, codex, codex-desktop, cursor, cursor-desktop, hermes-agent, opencode, pi.")
 
@@ -1114,7 +1127,7 @@ def usage(code=0):
     msg = "\n".join([
         "Usage:",
         f"  {prog} --login",
-        f"  {prog} --setup <agent-type> [--token <tok>] [--decl-hash <sha256>] [--script-hash <sha256>]  # global install (claude-code, codex, cursor, hermes-agent, opencode, pi, ...)",
+        f"  {prog} --setup <agent-type> [--token <tok>] [--decl-hash <sha256>] [--script-hash <sha256>] [--profile <name>]  # global install (claude-code, codex, cursor, hermes-agent, opencode, pi, ...)",
         f"  {prog} --setup [--cwd <path>] # project install (no agent type)",
         f"  {prog} upload  # gist the current session trace (needs CLAUDE_CODE_SESSION_ID/CODEX_THREAD_ID)",
         f"  {prog} --first --subsession-id <id> <text>",
@@ -1124,6 +1137,8 @@ def usage(code=0):
         "  With --decl-hash it re-fetches the security declaration, verifies it against that",
         "  sha256, and derives the SKILL.md and runtime hashes from it (sole-pin, DIR-285).",
         "  --script-hash still pins the runtime directly when used without a declaration.",
+        "  --profile selects a named Hermes profile (hermes-agent only): 'default' (or omitted)",
+        "  installs into <hermes_home>/skills, any other name into <hermes_home>/profiles/<name>/skills.",
         "",
         "Env:",
         f"  DIRECTIONALLY_API_BASE   Override API base URL (default: {DEFAULT_API_BASE})",
