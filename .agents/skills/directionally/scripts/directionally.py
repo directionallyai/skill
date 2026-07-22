@@ -15,15 +15,18 @@ import urllib.request
 import zipfile
 from datetime import datetime, timezone
 
+
 VERSION = "0.2.10"
 # sha256 of the SKILL.md that ships alongside this script. Regenerate with:
 #   shasum -a 256 .agents/skills/directionally/SKILL.md
 SKILL_SHA256 = "4edb044007e50c96f549a5a1d790c17ed3d8172c493da8c474d9844e348c7ff3"
 DEFAULT_API_BASE = "https://api.directionally.ai"
 DEFAULT_WEB_BASE = "https://directionally.ai"
-CREDENTIALS_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "credentials")
-PENDING_LOGIN_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "pending_login")
-AGENT_RUNTIME_PATH = os.path.join(os.path.expanduser("~"), ".directionally", "agent")
+DATA_DIR_ENV = "DIRECTIONALLY_DATA_DIR"
+GLOBAL_DATA_DIR = os.path.join(os.path.expanduser("~"), ".directionally")
+CREDENTIALS_PATH = os.path.join(GLOBAL_DATA_DIR, "credentials")
+PENDING_LOGIN_PATH = os.path.join(GLOBAL_DATA_DIR, "pending_login")
+AGENT_RUNTIME_PATH = os.path.join(GLOBAL_DATA_DIR, "agent")
 SKILL_RELATIVE = os.path.join(".agents", "skills", "directionally", "SKILL.md")
 SKILL_CLAUDE_RELATIVE = os.path.join(".claude", "skills", "directionally", "SKILL.md")
 DEFAULT_SKILL_URL = (
@@ -77,6 +80,20 @@ def _global_skills_dir(agent_type, profile=None):
     return mapping.get(agent_type)
 
 
+def _skill_local_data_dir(agent_type, profile=None):
+    if agent_type != "hermes-agent":
+        return None
+    hermes_skills = _global_skills_dir("hermes-agent", profile)
+    return os.path.join(hermes_skills, "directionally", "data")
+
+
+def _skill_local_runtime_path(agent_type, profile=None):
+    if agent_type != "hermes-agent":
+        return None
+    hermes_skills = _global_skills_dir("hermes-agent", profile)
+    return os.path.join(hermes_skills, "directionally", "scripts", "agent")
+
+
 def verify_download(label, data, expected):
     """Refuse to install a tampered download.
 
@@ -114,6 +131,30 @@ def get_api_base():
     return os.environ.get("DIRECTIONALLY_API_BASE", DEFAULT_API_BASE).rstrip("/")
 
 
+def local_runtime_data_dir():
+    path = globals().get("__file__")
+    if not path:
+        return None
+    real_path = os.path.realpath(path)
+    parent = os.path.dirname(real_path)
+    if os.path.basename(real_path) == "agent" and os.path.basename(parent) == "data":
+        return parent
+    if os.path.basename(real_path) == "agent" and os.path.basename(parent) == "scripts":
+        return os.path.join(os.path.dirname(parent), "data")
+    return None
+
+
+def data_dir():
+    override = os.environ.get(DATA_DIR_ENV, "").strip()
+    if override:
+        return os.path.realpath(os.path.expanduser(override))
+    return local_runtime_data_dir() or GLOBAL_DATA_DIR
+
+
+def agent_runtime_path():
+    return os.path.join(data_dir(), "agent")
+
+
 def _endpoint_hostname(api_base):
     parsed = urllib.parse.urlparse((api_base or DEFAULT_API_BASE).rstrip("/"))
     return parsed.hostname or "unknown"
@@ -121,20 +162,18 @@ def _endpoint_hostname(api_base):
 
 def credential_path(api_base):
     if (api_base or DEFAULT_API_BASE).rstrip("/") == DEFAULT_API_BASE:
-        return CREDENTIALS_PATH
+        return os.path.join(data_dir(), "credentials")
     return os.path.join(
-        os.path.expanduser("~"),
-        ".directionally",
+        data_dir(),
         f"credentials-{_endpoint_hostname(api_base)}",
     )
 
 
 def pending_login_path(api_base):
     if (api_base or DEFAULT_API_BASE).rstrip("/") == DEFAULT_API_BASE:
-        return PENDING_LOGIN_PATH
+        return os.path.join(data_dir(), "pending_login")
     return os.path.join(
-        os.path.expanduser("~"),
-        ".directionally",
+        data_dir(),
         f"pending_login-{_endpoint_hostname(api_base)}",
     )
 
@@ -195,8 +234,20 @@ def _has_default_ca_store():
 
 def _certifi_cache_dir():
     return os.environ.get("DIRECTIONALLY_CERTIFI_CACHE", "").strip() or os.path.join(
-        os.path.expanduser("~"), ".directionally", "certifi"
+        GLOBAL_DATA_DIR,
+        "certifi"
     )
+
+
+def write_ping():
+    try:
+        os.makedirs(data_dir(), exist_ok=True)
+        with open(os.path.join(data_dir(), "ping"), "w") as _f:
+            _f.write(str(random.randint(0, 2**31 - 1)))
+    except OSError:
+        # Some agents mount skill-local data read-only at runtime. Ping is only a
+        # liveness breadcrumb, so read-only packaged data must not block use.
+        pass
 
 
 def _certifi_from_installed_package():
@@ -413,7 +464,7 @@ def add_runtime_permission_rule():
     covers --first / --session / upload without prompting per argument. Merges into any
     existing settings.json, never clobbering unrelated keys, and is idempotent. Returns
     (rule, path, action) where action is 'added', 'already-present', or 'skipped: <why>'."""
-    agent_path = os.path.realpath(AGENT_RUNTIME_PATH)
+    agent_path = os.path.realpath(agent_runtime_path())
     rule = f"Bash({agent_path}:*)"
     path = claude_settings_path()
 
@@ -617,10 +668,19 @@ def write_if_changed(file_path, content):
     return {"path": file_path, "action": "updated" if existed else "created"}
 
 
-def render_skill_template(skill_body):
+def render_skill_template(skill_body, runtime_ref=None):
     """Render local install values into the verified SKILL.md template."""
-    agent_path = os.path.realpath(AGENT_RUNTIME_PATH)
-    return skill_body.replace("~/.directionally/agent", agent_path)
+    agent_ref = runtime_ref or os.path.realpath(agent_runtime_path())
+    rendered = skill_body.replace("~/.directionally/agent", agent_ref)
+    if agent_ref == "scripts/agent" and "## Available scripts" not in rendered:
+        rendered = rendered.replace(
+            "## Runtime\n",
+            "## Available scripts\n\n"
+            "- **`scripts/agent`** — Directionally runtime for session start, polling, login, and upload.\n\n"
+            "## Runtime\n",
+            1,
+        )
+    return rendered
 
 
 def download_url(url):
@@ -851,6 +911,23 @@ def cmd_setup(flags):
         agent_type = None
     api_base = get_api_base()
 
+    # Optional --profile selects a named Hermes profile: "default" (or omitted)
+    # installs into <hermes_home>/skills, anything else into that profile's dir.
+    profile = flags.get("profile")
+    if profile is True or profile == "":
+        profile = None
+
+    global_dir = _global_skills_dir(agent_type, profile) if agent_type else None
+    if agent_type and not global_dir:
+        raise ValueError(f"Unknown agent type: {agent_type!r}. Supported: claude-code, claude-desktop, codex, codex-desktop, cursor, cursor-desktop, hermes-agent, opencode, pi.")
+
+    skill_dir = os.path.join(global_dir, "directionally") if global_dir else None
+    skill_local_data = _skill_local_data_dir(agent_type, profile)
+    if skill_local_data:
+        os.environ[DATA_DIR_ENV] = skill_local_data
+    runtime_path = _skill_local_runtime_path(agent_type, profile) or agent_runtime_path()
+    runtime_ref = "scripts/agent" if skill_local_data else runtime_path
+
     # A one-time token embedded in the install command (DIR-83): exchange it for a
     # CLI credential before doing anything else, so identity is set up in one command.
     token = flags.get("token")
@@ -887,7 +964,7 @@ def cmd_setup(flags):
     # when sole-pinned, otherwise the hardcoded fallback baked into this script.
     # Install-specific values are rendered only after this verification step.
     verify_download("SKILL.md", skill_body.encode("utf-8"), declared.get("SKILL.md", SKILL_SHA256))
-    rendered_skill_body = render_skill_template(skill_body)
+    rendered_skill_body = render_skill_template(skill_body, runtime_ref)
 
     script_url = os.environ.get("DIRECTIONALLY_SCRIPT_URL", DEFAULT_SCRIPT_URL)
     script_body = download_url(script_url)
@@ -897,21 +974,11 @@ def cmd_setup(flags):
     if effective_script_hash:
         verify_download("directionally.py", script_body, effective_script_hash)
 
-    # Optional --profile selects a named Hermes profile: "default" (or omitted)
-    # installs into <hermes_home>/skills, anything else into that profile's dir.
-    profile = flags.get("profile")
-    if profile is True or profile == "":
-        profile = None
-
-    global_dir = _global_skills_dir(agent_type, profile) if agent_type else None
-    if agent_type and not global_dir:
-        raise ValueError(f"Unknown agent type: {agent_type!r}. Supported: claude-code, claude-desktop, codex, codex-desktop, cursor, cursor-desktop, hermes-agent, opencode, pi.")
-
     files = []
 
     if global_dir:
-        skill_dest = os.path.join(global_dir, "directionally", "SKILL.md")
-        script_dest = AGENT_RUNTIME_PATH
+        skill_dest = os.path.join(skill_dir, "SKILL.md")
+        script_dest = runtime_path
 
         files.append({**write_if_changed(skill_dest, rendered_skill_body), "abs": skill_dest})
         files.append({**write_if_changed(script_dest, script_body.decode("utf-8")), "abs": script_dest})
@@ -922,7 +989,10 @@ def cmd_setup(flags):
         except OSError:
             pass
 
-        lines = [f"Agent:  {agent_type}", f"Global: {global_dir}", ""]
+        lines = [f"Agent:  {agent_type}", f"Global: {global_dir}"]
+        if skill_local_data:
+            lines.append(f"Data:   {data_dir()}")
+        lines.append("")
         for f in files:
             lines.append(f"  {f['action']:<9} {f['abs']}")
         sys.stdout.write("\n".join(lines) + "\n")
@@ -936,10 +1006,10 @@ def cmd_setup(flags):
         files = [
             {**write_if_changed(os.path.join(target_root, SKILL_RELATIVE), rendered_skill_body), "rel": SKILL_RELATIVE},
             {**write_if_changed(os.path.join(target_root, SKILL_CLAUDE_RELATIVE), rendered_skill_body), "rel": SKILL_CLAUDE_RELATIVE},
-            {**write_if_changed(AGENT_RUNTIME_PATH, script_body.decode("utf-8")), "rel": AGENT_RUNTIME_PATH},
+            {**write_if_changed(runtime_path, script_body.decode("utf-8")), "rel": runtime_path},
         ]
         try:
-            os.chmod(AGENT_RUNTIME_PATH, 0o755)
+            os.chmod(runtime_path, 0o755)
         except OSError:
             pass
 
@@ -1150,17 +1220,21 @@ def usage(code=0):
 
 
 def main():
-    ping_dir = os.path.join(os.path.expanduser("~"), ".directionally")
-    os.makedirs(ping_dir, exist_ok=True)
-    with open(os.path.join(ping_dir, "ping"), "w") as _f:
-        _f.write(str(random.randint(0, 2**31 - 1)))
-
     args = sys.argv[1:]
     if not args or args[0] in ("-h", "--help", "help"):
         usage(0)
 
     try:
         flags = parse_args(args)
+        if flags.get("setup") == "hermes-agent":
+            profile = flags.get("profile")
+            if profile is True or profile == "":
+                profile = None
+            skill_local_data = _skill_local_data_dir("hermes-agent", profile)
+            if skill_local_data:
+                os.environ[DATA_DIR_ENV] = skill_local_data
+
+        write_ping()
 
         if flags.get("setup"):
             cmd_setup(flags)
